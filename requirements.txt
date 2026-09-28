@@ -6,3 +6,5 @@ ezdxf>=1.1
 # 可选：读 GeoTIFF 格网（EGM2008 tif）需要
 tifffile>=2024.1
 openpyxl>=3.1
+pyshp>=2.3
+pywin32>=306  ; sys_platform == 'win32'
