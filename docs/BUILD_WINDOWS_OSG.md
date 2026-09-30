@@ -3,15 +3,11 @@
 免安装版自带的 `native/osgb_vertex_transform.exe` 是**完全静态链接**的原生 Windows
 程序（约 25 MB，只依赖 Windows 系统 DLL），用户机器上**不需要 WSL、不需要 OpenSceneGraph**。
 
-这与 OSGBLab 的做法一致——它同样把 OpenSceneGraph 3.6.5 静态链接进自己的 exe：
+**为什么选静态链接**：OSG 在 Windows 上默认按动态库分发，需要随包提供十几个 DLL
+并保证加载路径正确。本工具只用到 `osgDB` 的读写能力与少数插件，把所需的 OSG 静态库
+一次性链进单个 exe（约 27 MB）后，用户机器上不需要任何附加依赖，也不需要配置 PATH。
 
-```
-OSGBLab.exe 内的编译路径字符串：
-  OpenSceneGraph-OpenSceneGraph-3.6.5\src\osg\Uniform.cpp
-  OpenSceneGraph-OpenSceneGraph-3.6.5\src\osgPlugins\ply\plyfile.cpp
-```
-
-本文记录从零复现该构建的完整过程，含必须打的三处兼容补丁。
+本文记录从零完成该构建的完整过程，含必须处理的四处兼容问题。
 
 ## 一、前置条件
 
@@ -23,7 +19,7 @@ OSGBLab.exe 内的编译路径字符串：
 | zlib | 1.3.1（源码） | 压缩器（`Compressor=zlib`），体积关键 |
 | libjpeg-turbo | 3.0.4（源码） | 内嵌 JPEG 贴图的解码/重压 |
 | nasm | 已随 MinGW | libjpeg-turbo 的 SIMD 需要 |
-| OpenSceneGraph | 3.6.5（源码） | 与 OSGBLab 同版本 |
+| OpenSceneGraph | 3.6.5（源码） | 稳定版；本项目只用其 osgDB 读写能力 |
 
 **不需要** libpng / freetype / curl / Qt / GLib —— `.osgb` 是 OSG 的核心二进制格式，
 不依赖这些。`.osgb` 里的贴图通常就是 **JPEG**，所以要加 libjpeg-turbo：没有它时每读一个

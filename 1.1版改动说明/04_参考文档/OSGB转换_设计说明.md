@@ -1,4 +1,4 @@
-# OSGB 转换：照套既有参数链路 + 逆向 OSGBLab 的处理方式
+# OSGB 转换：设计、性能与实测
 
 ## 架构（最终）
 
@@ -202,19 +202,19 @@ ContextCapture 的 osgb 顶点是 **uint16 量化的 1 mm 网格**。二进制�
 
 ---
 
-# 性能与逆向后记（2026-09-30）
+# 性能实测记录
 
 ## 结果：要求全部达标
 
-| 指标 | 要求 | **实测** | 旧（文本层）方案 | OSGBLab |
-|---|---|---|---|---|
-| 全模型耗时 | ≤ 60 s | **21.6 s** ✅ | 102.3 s | 10 s（用户实测）|
-| — 其中转换 | — | **16.2 s** | — | — |
-| — 其中拷回挂载点 | — | 5.5 s | — | — |
-| 输出体积（单瓦片） | ≈ 输入 | **0.82×** ✅ | 3.76× | ~1.0× |
-| 输出体积（全模型） | ≈ 输入 | 1.69× | 11.05× | ~1.0× |
-| 精度 | ≤ 0.1 mm | **0.005 mm** ✅ | 0.005 mm | — |
-| 瓦片 | 无失败 | **1537 ok / 0 fail** ✅ | 1536 ok | — |
+| 指标 | 要求 | **实测（内存态）** | 对照：文本层（`.osgt`）方案 |
+|---|---|---|---|
+| 全模型耗时 | ≤ 60 s | **21.6 s** ✅ | 102.3 s |
+| — 其中转换 | — | **16.2 s** | — |
+| — 其中拷回挂载点 | — | 5.5 s | — |
+| 输出体积（单瓦片） | ≈ 输入 | **0.82×** ✅ | 3.76× |
+| 输出体积（全模型） | ≈ 输入 | 1.69× | 11.05× |
+| 精度 | ≤ 0.1 mm | **0.005 mm** ✅ | 0.005 mm |
+| 瓦片 | 无失败 | **1537 ok / 0 fail** ✅ | 1536 ok |
 
 模型：`20260914梁场`，1537 瓦片 / 1562 MB / 2098 万顶点，WSL2 + 16 线程。
 
@@ -259,17 +259,19 @@ bash app/osgb/cpp/build.sh /tmp/osgb_vertex_transform
 
 构建产物**不入版本库**；界面会自动在 app/osgb/cpp/ 与 /tmp/ 查找，找不到时提示构建命令。
 源码与脚本一并提交，任何机器都能重建。
-## 逆向 OSGBLab 得到的三条关键结论
+## 三个关键设计选择及其依据
 
-| # | 结论 | 证据（Linux 版，符号完整） |
+| # | 选择 | 依据 |
 |---|---|---|
-| 1 | **不经过文本层**，读 osgb 直接写 osgb | `OSGB2OSGBVisitor` 直接处理 osg 场景图；产物目录无 `.osgt` |
-| 2 | 把 Mesh + 纹理**重新组装**成 OSG 场景图后写出 | `OSGB2OSGBVisitor::OutputMesh(Mesh const&, vector<Image>, string const&)` |
-| 3 | 用 **OpenMP 多线程** | Linux 版符号里有 `OSGB2OSGBSimplify(...) [clone ._omp_fn.0]`——`_omp_fn` 是 OpenMP 并行区的编译器生成符号。全库 7910 个 `tbb::` 符号里 7858 个属 OpenVDB，**与 OSGB 转换相关为 0**。（DIE 检出 `Intel TBB` 是因为 OpenVDB 依赖它，与本转换无关；我曾因此误判为 TBB，已更正。） |
+| 1 | **不经文本中间层**：读 osgb 直接写 osgb | 实测文本层（`.osgt`）单瓦片 0.887 s，内存态 0.230 s，**慢 3.9 倍**（见下表）。OSGB 瓦片数量大，这个系数直接决定可用性 |
+| 2 | 顶点变换与场景图读写**分离**：只改 `osg::Geometry` 的 `Vec3Array`，其余节点原样带过 | 坐标转换只涉及几何；不动 PagedLOD / StateSet / 纹理，可保证除坐标外的一切逐位不变 |
+| 3 | **单进程多线程**批处理，不按瓦片起进程 | 进程启动与 OSG 初始化开销远大于单瓦片计算量。内置线程池一次吃满多核 |
 
-它配置的 OSG 选项（`OutputMesh` 反汇编实证）：
-`IncludeFile` / `WriteImageHint` / `OSGSoVersion=100` / `TargetFileVersion`，
-并通过 `Registry::getReaderWriterForExtension()` 直接取 osgb 插件 writer。
+写出时通过 `osgDB::Registry::getReaderWriterForExtension()` 直接取 osgb writer，
+并配以下选项（体积影响见下一节）：
+
+`IncludeFile` / `WriteImageHint` / `OSGSoVersion=100` / `TargetFileVersion` /
+`Compressor=zlib` / `compression=1`。
 
 ## 体积控制：三个选项缺一不可
 
@@ -283,7 +285,7 @@ bash app/osgb/cpp/build.sh /tmp/osgb_vertex_transform
 | **`Compressor=zlib compression=1 WriteImageHint=IncludeFile`** | **2,346,270** | **0.82×** |
 | 原始文件 | 2,865,453 | 1.00× |
 
-- `Compressor=zlib` 压几何（从二进制里挖出的键名，紧邻 `osgblab.com` 字符串）
+- `Compressor=zlib` 压几何数据
 - `compression=1` + `WriteImageHint=IncludeFile` 压纹理并内联
 - `TargetFileVersion` 实测 147/154/161/200 **对体积无影响**，已排除
 

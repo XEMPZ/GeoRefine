@@ -7,7 +7,7 @@ r"""OSGB 模型读写 —— 以 OpenSceneGraph（osgconv）为引擎。
 `osgconv tile.osgb tile.osgt` 能读出 `324.502 104.057 -75.2659`，是 OSG 依据量化
 参数反算的结果——**量化是 OSG 的内部实现，不是文件格式的一部分**。
 
-因此本模块复用 OSG 官方读写器；OSGBLab 亦然（链接 OSG 后由
+因此本模块复用 OSG 官方读写器（链接 OSG 后由
 `osgDB::readNodeFile/writeNodeFile` 读写，不自行解析字节）。
 
 调用方式

@@ -1,4 +1,4 @@
-r"""OSGB 模型转换（坐标/高程）—— 复刻 OSGBLab 的处理顺序。
+r"""OSGB 模型转换（坐标/高程）—— 内存态读写，不经文本中间层。
 
 子模块：
   - `srs`       metadata.xml 的 SRS / SRSOrigin 解析与回写

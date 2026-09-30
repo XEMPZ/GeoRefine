@@ -35,7 +35,7 @@ OUT = DIST / NAME
 
 SRC_ITEMS = ["app", "tests", "tools", "docs", "main.py", "run_tests.py",
              "requirements.txt", "GeoRefine.spec", "README.md",
-             "ARCHITECTURE.md", "LICENSE", "LICENSE.txt"]
+             "ARCHITECTURE.md", "LICENSE", "THIRD_PARTY_LICENSES.md"]
 
 
 def run_build():
@@ -103,7 +103,7 @@ def assemble():
                                      chr(125) + chr(10), encoding="utf-8")
     (OUT / "使用说明.txt").write_text(USAGE_TEXT.replace("{V}", VERSION), encoding="utf-8")
     # 许可证也放一份在根目录，用户解压就能看到
-    for lic in ("LICENSE", "LICENSE.txt"):
+    for lic in ("LICENSE", "THIRD_PARTY_LICENSES.md"):
         if (ROOT / lic).exists():
             shutil.copy2(ROOT / lic, OUT / lic)
 

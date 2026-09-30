@@ -4,7 +4,7 @@ r"""大地水准面格网格式测试。
 而且 RMS 转换 / OSGB 模型转换 / 点云转换三条链路对格式完全无感。
 
 夹具现场生成：按 app/core/geoid.py::read_ggf 的布局（天宝 GGF）造一个
-与实际模型区域重叠的小格网，与同解析式的 CSV 格网对拍。
+与实际模型区域重叠的小格网，与同解析式的 CSV 格网交叉校验。
 """
 from __future__ import annotations
 

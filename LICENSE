@@ -19,20 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-本软件依赖的第三方组件（各自遵循其许可证）：
-
-* PySide6 / Qt for Python — LGPL-3.0（动态链接，未修改）
-* NumPy — BSD-3-Clause
-* Pillow — MIT-CMU
-* piexif — MIT
-* ezdxf — MIT
-* pyshp — MIT
-* openpyxl — MIT
-* tifffile — BSD-3-Clause
-* laspy — BSD-2-Clause
-* pyproj / PROJ — MIT / X11（仅用于读取 LAS 头里的坐标系定义）
-* pywin32 — PSF（Windows 上用于 AutoCAD COM 与 PGDB 读取）
-* OpenSceneGraph — LGPL-2.1 with wxWidgets exception（OSGB 转换器，用户自行构建）

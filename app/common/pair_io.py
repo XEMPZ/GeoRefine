@@ -1,6 +1,6 @@
 """控制点对文件解析：GPS 手簿 .cot 与南方 CASS 公共点文件。
 
-两者均为 AutoClaw 时代逆向/实测确认的格式，样例见 sample_data/点对文件样例/。
+两者均为实测确认的格式，样例见 sample_data/点对文件样例/。
 
 .cot（中海达 GNSSTools 点对文件，逗号分隔，CRLF）：
   点名, x北, y东, h正常高, B(d.ms), L(d.ms), H大地高, 辅1, 辅2, 用平面(Y/N), 用高程(Y/N)

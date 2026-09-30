@@ -17,15 +17,17 @@ block_cipher = None
 
 # 只收项目自身代码；数据文件（格网/参数/手册）随包外置
 hiddenimports = [
-    "app.common.params", "app.common.geoid", "app.common.io_csv",
+    "app.common.params", "app.common.io_csv",
     "app.common.logutil", "app.logic.apply_params", "app.logic.cp_methods",
     "app.logic.space_points", "app.logic.file_jobs", "app.logic.photo_spec",
-    "app.logic.accuracy", "app.core.gauss", "app.core.transform2d",
+    "app.logic.accuracy", "app.core.geoid", "app.core.gk_engine",
+    "app.core.projection", "app.core.transform2d",
     "app.osgb.flash", "app.osgb.transform", "app.pointcloud.las_io",
     "app.pointcloud.las_transform", "app.pointcloud.las_job",
 ]
 hiddenimports += collect_submodules("laspy")
-hiddenimports += collect_submodules("pyproj")
+# 注：pyproj 只在开发期对标工具 tools/verify_models.py 里用，运行时不依赖，
+# 故**不打进发行包**（此前误用 collect_submodules 打进去了，约多 10 MB）。
 # imagecodecs 是 EGM 系列 GeoTIFF 格网的必需依赖（浮点预测器解码）。
 # 它是一个"薄壳 + 几十个独立 .pyd 编解码器"的包，PyInstaller 默认只抓到
 # imagecodecs/_shared.pyd，其余全漏 —— 打包版读 tif 会失败。

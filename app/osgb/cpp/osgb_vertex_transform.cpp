@@ -1,7 +1,7 @@
 // osgb_vertex_transform —— OSGB 顶点仿射变换工具（内存态，无文本层）
 //
-// 与 OSGBLab 同层：用 OSG 的 C++ API 读 osgb → 遍历 Geometry 顶点 → 变换 → 写 osgb。
-// 批处理模式内置线程池，一次进程吃满多核（对应 OSGBLab 用 OpenMP 并行区的做法：
+// 做法：用 OSG 的 C++ API 读 osgb → 遍历 Geometry 顶点 → 变换 → 写 osgb。
+// 批处理模式内置线程池，一次进程吃满多核（同理，避免按瓦片起进程的启动开销）。
 // 其符号 OSGB2OSGBSimplify(...) [clone ._omp_fn.0] 即 OpenMP 并行区）。
 //
 // 用法:

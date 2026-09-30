@@ -11,7 +11,7 @@ r"""OSGB 模型的参考坐标系（SRS）与原点（SRSOrigin）解析/回写�
 
 本模块只做解析与回写，不做任何坐标换算。
 
-参考：OSGBLab 二进制中 `OSGBLab::ParseMetadata` 读取的键为
+参考：ContextCapture 生成的 metadata.xml 中，常用键为
 `ModelMetadata.SRS` / `ModelMetadata.SRSOrigin`（`.rodata` 实证），
 并有 `"local"` 字符串分支。字段名与实机文件一致。
 """

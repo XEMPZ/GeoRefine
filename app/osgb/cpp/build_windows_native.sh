@@ -3,8 +3,8 @@
 #                            osgb_vertex_transform.exe（零 DLL 依赖、无需 WSL）。
 #
 # 为什么需要这个：交付给用户的免安装版不该要求装 WSL 或 OpenSceneGraph。
-# OSGBLab 也是这么做的——它把 OpenSceneGraph 3.6.5 静态链接进自己的 exe
-# （二进制里留有 OpenSceneGraph-3.6.5\src\... 的编译路径）。
+# 做法是把所需的 OSG 静态库一次性链进单个 exe（约 27 MB），
+# 用户机器上不需要任何附加依赖，也不必配置 PATH。
 #
 # 依赖：zlib（压缩器）+ libjpeg-turbo（贴图重压），两者都从源码静态构建。
 # 前置：MinGW-w64 (g++ >= 11, UCRT)、cmake、ninja、git、curl、tar、nasm

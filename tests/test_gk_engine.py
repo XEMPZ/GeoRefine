@@ -1,7 +1,7 @@
-"""CoordTran 兼容引擎测试（gk_engine / anglefmt / 三参数）。内嵌逆向实测真值。
+"""坐标转换引擎测试（gk_engine / anglefmt / 三参数）。内嵌实测真值。
 
 真值来源：CoordTran.exe（铁四院 V4.2.3）反射黑盒探针实测输出，
-正算与权威行业真值 144 组全量对比 max 0.5 µm（见 tests/data/projection_truth.csv）。
+正算与 144 组已知参考坐标全量对比 max 0.5 µm（见 tests/data/projection_truth.csv）。
 运行: $env:PYTHONIOENCODING='utf-8'; python tests\test_gk_engine.py
 """
 from __future__ import annotations

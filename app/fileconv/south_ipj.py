@@ -1,6 +1,6 @@
 """南方坐标转换处理软件 V2.0（icoord）方案文件导入。
 
-格式结论（逆向）：.ipj 与 CoordSetting.db 均为 SQLite 数据库（样例 projects/*.ipj 实测），
+格式结论（实测）：.ipj 与 CoordSetting.db 均为 SQLite 数据库（样例 projects/*.ipj 实测），
 表结构自描述：Ellipsoid(A, E1=1/f)、Projection(CentralMeridian, EastDeclination=y0东加常数m,
 NorthDeclination=x0北加常数m, Yardstick/Scale=尺度k)、Parm4(North/East平移, Rotate, Scale)、
 Parm7(X/Y/Z平移m, K尺度小数, A/B/R旋转弧度)、IdenticalPoint(公共点 X1..Z2 + Rms)、

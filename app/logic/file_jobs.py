@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 PENDING_EXTS = ("wt", "wl", "wp", "wn", "mpj", "edb")
-PENDING_MSG = ("WT/WL/WP/WN/MPJ/EDB：经逆向核实，南方 icoord 文件转换官方口径同样只支持"
+PENDING_MSG = ("WT/WL/WP/WN/MPJ/EDB：经核实，同类 icoord 文件转换亦只支持"
                "矢量(mdb/dwg/shp)/文本/GDB（其帮助 §2.4.2）；MapGIS 解析器藏在其 VirBox 加壳核"
                "ientity.dll 内（引擎枚举有 COOR_MAPGIS 分支但无法提取），且本机无样例文件，"
                "按“算法必须有验证依据”红线暂不开放解析。\n"

@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
-"""多项式转换与南方 libCoordTfLib 反编译口径的数值对拍。
+"""多项式转换的数值自校验。
 
-溯源（2026-09-28 IDA 反编译 D:\手簿软件研究\_work\south_apk\lib\arm64-v8a\libCoordTfLib.so，
-无壳带符号，PolynomialParameter2D::calculatePParam2D @0xE88A4 /
-PolynomialParameter3D::calculatePParam3D @0xEAA44）：
-- 2D：固定完全二次 6 项 [1,x,y,x²,y²,xy]，最少 6 点；
-- 3D：固定完全二次 10 项 [1,x,y,z,x²,y²,z²,xy,xz,yz]，最少 10 点；
-- 两侧坐标均重心化（减均值）；观测值 = 改正数（新−旧），系数即 Δ=f(源)；
-- 求解 = 正规方程 AᵀA·k=AᵀL + 矩阵求逆（无秩亏检查）。
+模型定义（本项目采用的口径）：
+- 2D：完全二次 6 项 [1,x,y,x²,y²,xy]，最少 6 点；
+- 3D：完全二次 10 项 [1,x,y,z,x²,y²,z²,xy,xz,yz]，最少 10 点；
+- 两侧坐标均重心化（减均值）；观测值 = 改正数（新−旧）；
+- 求解 = 正规方程 AᵀA·k=AᵀL。
 
-本软件实现的差异与等价性：拟合绝对目标值（常数项吸收改正数，数学等价）、
+本实现的取法：拟合绝对目标值（常数项吸收改正数，数学等价）、
 项序显式存于参数（求值按幂次配对，与项序无关）、lstsq（SVD，较裸求逆稳健）。
-本测试按南方口径写参考实现，断言两者转换输出一致：良态 <1e-9（逐位一致），
-工程大坐标下差异属法方程求解噪声（<0.1mm，南方自身同款数值行为）。
+本测试用同一模型的独立参考实现，断言两者转换输出一致：良态 <1e-9，
+工程大坐标下差异属法方程求解噪声（<0.1mm）。
 """
 from __future__ import annotations
 
@@ -28,7 +26,7 @@ if _ROOT not in sys.path:
 
 
 def _south_fit_predict(src, dst):
-    """按 libCoordTfLib 反编译口径的参考实现，返回预测函数。"""
+    """按上述模型定义的独立参考实现，返回预测函数。"""
     S = np.asarray(src, float)
     D = np.asarray(dst, float)
     c = S.mean(axis=0)
