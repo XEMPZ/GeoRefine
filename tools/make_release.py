@@ -76,19 +76,19 @@ def assemble():
     shutil.copytree(ROOT / "docs", docdir,
                     ignore=shutil.ignore_patterns("__pycache__"))
 
-    # 内置全球 EGM96 格网（4 MB），开箱即可算高程异常；
-    # 中国区域高精度格网请自行放入 models/
-    builtin = ROOT / "models" / "egm96_15.gtx"
-    if builtin.exists():
-        shutil.copy2(builtin, OUT / "models" / builtin.name)
-        print("    内置格网：" + builtin.name)
-
     for sub, note in [("models", "大地水准面格网（gtx）放这里"),
                       ("params", "转换参数（JSON）放这里"),
                       ("logs", "操作台账自动写入这里")]:
         d = OUT / sub
         d.mkdir(exist_ok=True)
         (d / "放这里.txt").write_text(note + "\n", encoding="utf-8")
+
+    # 内置全球 EGM96 格网（4 MB），开箱即可算高程异常；
+    # 中国区域高精度格网请自行放入 models/
+    builtin = ROOT / "models" / "egm96_15.gtx"
+    if builtin.exists():
+        shutil.copy2(builtin, OUT / "models" / builtin.name)
+        print("    内置格网：" + builtin.name)
 
     (OUT / "config.json").write_text(chr(123) + chr(10) +
                                      "  " + chr(34) + "enable_poly3d" + chr(34) + ": false" + chr(10) +
