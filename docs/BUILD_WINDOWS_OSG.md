@@ -20,13 +20,14 @@ OSGBLab.exe 内的编译路径字符串：
 | MinGW-w64 | g++ 16.2.0（UCRT） | 必须是 UCRT 版；MSVCRT 版行为不同 |
 | CMake | 4.4.2 | 需 `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` 兼容老工程 |
 | Ninja | 1.13.2 | 构建器 |
-| zlib | 1.3.1（源码） | 唯一外部依赖 |
+| zlib | 1.3.1（源码） | 压缩器（`Compressor=zlib`），体积关键 |
+| libjpeg-turbo | 3.0.4（源码） | 内嵌 JPEG 贴图的解码/重压 |
+| nasm | 已随 MinGW | libjpeg-turbo 的 SIMD 需要 |
 | OpenSceneGraph | 3.6.5（源码） | 与 OSGBLab 同版本 |
 
-**不需要** libpng / libjpeg / freetype / curl / Qt / GLib —— `.osgb` 是 OSG 的
-核心二进制格式，不依赖这些。首次运行时可能看到
-`readImage(): Unable to find a plugin for jpg` 警告，那是因为原始瓦片内嵌了 JPEG 贴图，
-工具只改顶点、不碰贴图，该警告不影响结果。
+**不需要** libpng / freetype / curl / Qt / GLib —— `.osgb` 是 OSG 的核心二进制格式，
+不依赖这些。`.osgb` 里的贴图通常就是 **JPEG**，所以要加 libjpeg-turbo：没有它时每读一个
+瓦片都会报 `readImage(): Unable to find a plugin for jpg`（几何结果仍然正确，只是贴图不重压）。
 
 ## 二、一键构建
 
@@ -87,6 +88,35 @@ src/osgViewer/GraphicsWindowWin32.cpp:1115: error: narrowing conversion of -2 fr
 是含负值的常量；存进 `unsigned int` 后用于 `switch` 会触发 `-Wnarrowing`（GCC 下是错误）。
 **解法：把 `unsigned int result` 改为 `LONG result`**。
 
+### 坑 4：`No such compressor zlib` —— 输出体积翻倍
+
+两个独立原因，都踩过：
+
+**(a) `USE_ZLIB` 宏没传到 osgDB。** `src/osgDB/CMakeLists.txt:162` 里：
+
+```cmake
+IF( ZLIB_FOUND )
+    ADD_DEFINITIONS( -DUSE_ZLIB )
+```
+
+手工指定 `-DZLIB_LIBRARY` 时 `FindZLIB` 可能不置位 `ZLIB_FOUND`，宏就丢了。
+**解法：在 `CMAKE_CXX_FLAGS` 里显式加 `-DUSE_ZLIB`。**
+
+**(b) `libosgDB.a` 不在 `--whole-archive` 里，压缩器被链接器丢弃。**
+`Compressors.cpp.obj` 里的 `REGISTER_COMPRESSOR("zlib", ...)` 靠静态初始化注册，
+但如果没有任何代码引用该目标文件里的符号，归档成员就不会被提取。
+
+排查手法（比推断可靠）：
+
+```bash
+nm --defined-only libosgDB.a | grep ZLibCompressor     # 有
+nm osgb_vertex_transform.exe  | grep ZLibCompressor     # 没有 -> 就是被丢了
+```
+
+**解法：把 `libosgDB.a` 也放进 `--whole-archive`。**
+
+两个都修好后，输出体积从 1.32× 回到 **0.87×**，且读取耗时从 3026 ms 降到 113 ms。
+
 ## 四、必须保留完整模块与序列化器
 
 容易踩的误区：以为"只改顶点"就可以只编 `osg` + `osgDB`。**不行。**
@@ -136,5 +166,11 @@ Windows 直出  局部X 246.4780~810.2950   Y -286.7560~466.6120   <- 正是 -7 
 原始 vs 往返 最大差异 1.0000 mm（.osgb 顶点量化步长，非工具误差）
 ```
 
-性能（10 瓦片 / 212,266 顶点 / 8 线程）：**Windows 原生 0.73 s，WSL 版 0.47 s**，
-顶点数与块数完全一致。中文路径（`E:\Agent测试\...`）正常工作。
+性能（12 瓦片 / 378,121 顶点 / 8 线程）：**0.25 s**，输出 **0.87×**，
+stderr **完全干净**（无任何插件警告）。中文路径（`E:\Agent测试\...`）正常工作。
+
+| 构建阶段 | 体积倍率 | stderr |
+|---|---|---|
+| 最小集（无压缩器、无 jpeg） | 0.82×（zlib 生效时） | jpg 插件警告 |
+| 加了 jpeg，但丢了 zlib 压缩器 | **1.32×** | `No such compressor zlib` |
+| **最终（jpeg + zlib 压缩器）** | **0.87×** | **干净** |
