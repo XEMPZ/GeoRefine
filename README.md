@@ -48,10 +48,13 @@ OSGB 顶点为 (东,北,高)、LAS 的 X=东 Y=北，与本软件 (北,东) 相�
 | | OSGB 倾斜摄影 | LAS/LAZ 点云 |
 |---|---|---|
 | 实测性能 | 1537 瓦片 / 2098 万顶点 / 16 线程 **约 23 秒** | **每秒上千万点**；4913 万点单文件约 7 秒（含读写） |
-| 实现 | C++ 内存态遍历（`app/osgb/cpp/`） | 整块矩阵化（numpy） |
+| 实现 | C++ 内存态遍历，静态链接 OSG（`app/osgb/cpp/`） | 整块矩阵化（numpy） |
 | 完整性 | SRSOrigin 不变 | 非坐标属性与头部元数据逐位保留 |
 
-**OSGB 需要 OpenSceneGraph**。免安装版不含该工具链，首次使用请按界面提示构建：
+**OSGB 转换开箱即用**：免安装版内置 Windows 原生转换器（`native/osgb_vertex_transform.exe`，
+全静态链接，约 25 MB，**只依赖 Windows 系统 DLL** —— 不需要 WSL、不需要安装 OpenSceneGraph）。
+该 exe 由本仓库的 `app/osgb/cpp/build_windows_native.sh` 从 OpenSceneGraph 3.6.5 源码静态构建，
+完整过程见 `docs/BUILD_WINDOWS_OSG.md`。若需自行重建：
 
 ```bash
 # WSL / Linux
@@ -59,7 +62,8 @@ sudo apt-get install -y libopenscenegraph-dev
 bash app/osgb/cpp/build.sh /tmp/osgb_vertex_transform
 ```
 
-未构建时该页会明确报出缺失，其余功能不受影响。**LAS 点云转换无需任何外部工具。**
+界面会按 `native/` → `app/osgb/cpp/native/` → WSL `/tmp/` 的顺序自动查找；
+都找不到时才提示构建，且不影响其它功能。**LAS 点云转换同样无需任何外部工具。**
 
 ## 精度验证
 
@@ -77,6 +81,7 @@ GeoRefine/
   GeoRefine.exe        <- 双击运行（无需 Python）
   _internal/           <- Python 运行时与依赖（勿手动改）
   src/                 <- 完整源代码（app/ tests/ tools/ docs/ main.py GeoRefine.spec）
+  native/              <- Windows 原生 OSGB 转换器（全静态，无需 WSL/OSG）
   models/              <- 大地水准面格网放这里
   params/              <- 转换参数放这里（JSON，可直接拷给别人）
   logs/                <- 操作台账

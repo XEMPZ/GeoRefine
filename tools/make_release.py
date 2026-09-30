@@ -35,7 +35,7 @@ OUT = DIST / NAME
 
 SRC_ITEMS = ["app", "tests", "tools", "docs", "main.py", "run_tests.py",
              "requirements.txt", "GeoRefine.spec", "README.md",
-             "ARCHITECTURE.md", "LICENSE"]
+             "ARCHITECTURE.md", "LICENSE", "LICENSE.txt"]
 
 
 def run_build():
