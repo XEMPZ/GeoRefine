@@ -79,10 +79,11 @@ def assemble():
     for sub, note in [("models", "大地水准面格网（gtx）放这里"),
                       ("params", "转换参数（JSON）放这里"),
                       ("logs", "操作台账自动写入这里"),
-                      ("native", "Windows 原生 OSGB 转换器")]:
+                      ("native", "Windows 原生 OSGB 转换器（请勿删除）")]:
         d = OUT / sub
         d.mkdir(exist_ok=True)
-        (d / "放这里.txt").write_text(note + "\n", encoding="utf-8")
+        if sub != "native":      # native/ 放的是程序文件，不需要说明占位
+            (d / "放这里.txt").write_text(note + "\n", encoding="utf-8")
 
     # Windows 原生转换器（全静态，无需 WSL/OSG）——OSGB 页会自动识别
     native = ROOT / "app" / "osgb" / "cpp" / "native" / "osgb_vertex_transform.exe"
