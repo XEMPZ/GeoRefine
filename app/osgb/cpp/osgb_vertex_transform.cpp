@@ -1,11 +1,11 @@
-// osgxform —— OSGB 顶点仿射变换工具（内存态，无文本层）
+// osgb_vertex_transform —— OSGB 顶点仿射变换工具（内存态，无文本层）
 //
 // 与 OSGBLab 同层：用 OSG 的 C++ API 读 osgb → 遍历 Geometry 顶点 → 变换 → 写 osgb。
 // 批处理模式内置线程池，一次进程吃满多核（对应 OSGBLab 用 TBB 的做法）。
 //
 // 用法:
-//   osgxform <in.osgb> <out.osgb> <A(9,csv)> <b(3,csv)> [optstring]
-//   osgxform --batch <清单.tsv> [optstring] [线程数]
+//   osgb_vertex_transform <in.osgb> <out.osgb> <A(9,csv)> <b(3,csv)> [optstring]
+//   osgb_vertex_transform --batch <清单.tsv> [optstring] [线程数]
 //
 // 清单每行: <in.osgb>\t<out.osgb>\t<A 9 数逗号分隔>\t<b 3 数逗号分隔>
 //
@@ -23,8 +23,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <fstream>
 #include <mutex>
 #include <sstream>
@@ -69,6 +71,15 @@ static bool parse_csv(const char* s, double* out, int n) {
     return i == n;
 }
 
+// 逐级创建目录（C++17 filesystem，跨平台）
+static void mkdirs_for(const std::string& file_path) {
+    std::error_code ec;
+    std::filesystem::path p(file_path);
+    if (p.has_parent_path()) {
+        std::filesystem::create_directories(p.parent_path(), ec);
+    }
+}
+
 struct Job {
     std::string in, out;
     double A[9];
@@ -99,6 +110,7 @@ static Result process(const std::string& in, const std::string& out,
     node->accept(xf);
     auto t2 = std::chrono::steady_clock::now();
 
+    mkdirs_for(out);
     osg::ref_ptr<osgDB::Options> opt = new osgDB::Options;
     if (!optstr.empty()) opt->setOptionString(optstr);
     bool ok = osgDB::writeNodeFile(*node, out, opt.get());
@@ -138,6 +150,10 @@ static void worker(const std::vector<const Job*>& jobs, const std::string& optst
             add(&st->tw, r.tw);
         } else {
             st->fail.fetch_add(1, std::memory_order_relaxed);
+            // 失败原因打到 stderr，便于定位（多线程下用 flockfile 保证整行）
+            flockfile(stderr);
+            fprintf(stderr, "[FAIL] read/write failed: %s\n", j.in.c_str());
+            funlockfile(stderr);
         }
     }
 }

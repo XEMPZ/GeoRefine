@@ -1,4 +1,4 @@
-"""把 GeoRefine 参数文档接到 osgxform（C++ 内存态工具）上。
+"""把 GeoRefine 参数文档接到 osgb_vertex_transform（C++ 内存态工具）上。
 
 轴序（致命细节）
 ----------------
@@ -48,7 +48,7 @@ from app.osgb.osgb_io import OsgToolchain, OsgToolchainMissing
 from app.osgb.srs import SrsInfo, load_metadata, write_metadata_xml
 from app.osgb.transform import PlanarVertexTransform, affine_coefficients
 
-__all__ = ["FlashResult", "coeffs_for_document", "build_job_list", "run_osgxform_batch",
+__all__ = ["FlashResult", "coeffs_for_document", "build_job_list", "run_vertex_transform_batch",
            "convert_model_fast", "DEFAULT_OPTIONS"]
 
 # 体积控制的推荐选项（实测 2.87 MB 瓦片 → 0.82×；缺任一项都会显著变大）
@@ -127,7 +127,7 @@ def _fmt(a: np.ndarray) -> str:
 
 def build_job_list(jobs, A: np.ndarray, b: np.ndarray, path: str | Path, *,
                    backend: str = "win") -> Path:
-    """生成 osgxform 的批处理清单（TSV）。jobs 为 [(src, dst)]。
+    """生成 osgb_vertex_transform 的批处理清单（TSV）。jobs 为 [(src, dst)]。
 
     backend="wsl" 时把清单里的路径转成 /mnt/... 形式——**清单路径本身也要转**，
     因为 C++ 工具在 WSL 内解析这些行。
@@ -142,7 +142,7 @@ def build_job_list(jobs, A: np.ndarray, b: np.ndarray, path: str | Path, *,
     return p
 
 
-def run_osgxform_batch(binary: str | Path, job_list: str | Path, *,
+def run_vertex_transform_batch(binary: str | Path, job_list: str | Path, *,
                        options: str = DEFAULT_OPTIONS, threads: int = 16,
                        timeout: float = 7200.0, cancel=None) -> FlashResult:
     """调用 C++ 工具执行批处理。
@@ -203,7 +203,7 @@ def run_osgxform_batch(binary: str | Path, job_list: str | Path, *,
             res.threads = int(num("threads", threads))
             break
     if not res.ok and not res.failed:
-        res.failures.append(res.raw[-300:] or "osgxform 无输出")
+        res.failures.append(res.raw[-300:] or "osgb_vertex_transform 无输出")
     return res
 
 
@@ -217,11 +217,11 @@ def convert_model_fast(model_dir: str | Path, out_dir: str | Path, param_doc: di
                        progress=None,
                        cancel=None,
                        proj_override: dict | None = None) -> FlashResult:
-    """用 osgxform 整模型转换（快速路径）。
+    """用 osgb_vertex_transform 整模型转换（快速路径）。
 
     model_dir: 含 metadata.xml 的模型根目录
     param_doc: GeoRefine 参数文档（必须可用于平面输入）
-    binary:    osgxform 可执行文件（Windows 路径或 WSL 路径）
+    binary:    osgb_vertex_transform 可执行文件（Windows 路径或 WSL 路径）
     keep_origin: True 时 SRSOrigin 不变（局部坐标系不变）
     stage_local: True 时先写 WSL 本地盘再拷回（挂载点 I/O 优化）
     """
@@ -251,7 +251,7 @@ def convert_model_fast(model_dir: str | Path, out_dir: str | Path, param_doc: di
     # 任务清单 + 结果目录
     tmp = Path(tempfile.mkdtemp(prefix="osgbflash_"))
     lst = build_job_list(jobs, A, b, tmp / "jobs.tsv", backend=backend_of(binary))
-    res = run_osgxform_batch(binary, lst, options=options, threads=threads, cancel=cancel)
+    res = run_vertex_transform_batch(binary, lst, options=options, threads=threads, cancel=cancel)
 
     if not keep_origin:
         # 需要改写 SRSOrigin

@@ -15,7 +15,7 @@ OSGB 模块只做两件事：
 2. `transform.affine_coefficients` —— 把"逐点函数"线性化成矩阵 `out = A·x + b`
    （有限差分 + 二阶差分线性性校验；高阶多项式在此被明确拒绝）
 
-C++ 工具 `native/osgxform.cpp` 只做矩阵乘法，不认识 EPSG/投影/七参数。
+C++ 工具 `app/osgb/cpp/osgb_vertex_transform.cpp` 只做矩阵乘法，不认识 EPSG/投影/七参数。
 
 ## ⚠ 轴序：OSGB 用 (东,北)，本项目用 (北,东) —— 两者相反
 
@@ -218,7 +218,7 @@ ContextCapture 的 osgb 顶点是 **uint16 量化的 1 mm 网格**。二进制�
 
 模型：`20260914梁场`，1537 瓦片 / 1562 MB / 2098 万顶点，WSL2 + 16 线程。
 
-## 实现：`app/osgb/native/osgxform.cpp`
+## 实现：`app/osgb/cpp/osgb_vertex_transform.cpp`
 
 用 OSG 的 C++ API 在内存里完成，**不经过文本层**：
 `readNodeFile` → `NodeVisitor` 遍历 `osg::Geometry` 的 `Vec3Array` → 仿射变换 → `writeNodeFile`。
@@ -234,6 +234,31 @@ ContextCapture 的 osgb 顶点是 **uint16 量化的 1 mm 网格**。二进制�
 | 写 | 0.240 s | **0.159 s** |
 | **合计** | **0.887 s** | **0.230 s**（3.9×）|
 
+## C++ 源码组织
+
+```
+app/osgb/
+  cpp/
+    osgb_vertex_transform.cpp    <- C++ 工具源码（内存态顶点变换）
+    build.sh                     <- 构建脚本（g++ -O2 -std=c++17 -pthread）
+  flash.py                       <- 驱动 Python 侧：参数 -> 仿射系数 -> 调 C++ 工具
+  transform.py                   <- 顶点变换语义与仿射线性化（委托 apply_points）
+  osgb_io.py / osgb_job.py       <- osgconv 桥与文本层路径（对照用）
+```
+
+**为什么这段必须用 C++**：性能瓶颈在「解析 + 序列化」本身。走文本中间层（.osgt）
+要多两次序列化、慢 3~4 倍；C++ 直接用 OSG API 在内存里读场景图、改 Vec3Array、写回，
+全模型 1537 瓦片约 23 秒（16 线程）。
+
+**构建**：
+
+```bash
+sudo apt-get install -y libopenscenegraph-dev
+bash app/osgb/cpp/build.sh /tmp/osgb_vertex_transform
+```
+
+构建产物**不入版本库**；界面会自动在 app/osgb/cpp/ 与 /tmp/ 查找，找不到时提示构建命令。
+源码与脚本一并提交，任何机器都能重建。
 ## 逆向 OSGBLab 得到的三条关键结论
 
 | # | 结论 | 证据（Linux 版，符号完整） |
@@ -275,16 +300,16 @@ ContextCapture 的 osgb 顶点是 **uint16 量化的 1 mm 网格**。二进制�
 
 ```bash
 sudo apt-get install -y libopenscenegraph-dev
-bash app/osgb/native/build.sh /tmp/osgxform
+bash app/osgb/cpp/build.sh /tmp/osgb_vertex_transform
 
 OPT="Compressor=zlib compression=1 WriteImageHint=IncludeFile"
 
 # 单瓦片
-/tmp/osgxform in.osgb out.osgb "1,0,0,0,1,0,0,0,1" "1000,-500,12.5" "$OPT"
+/tmp/osgb_vertex_transform in.osgb out.osgb "1,0,0,0,1,0,0,0,1" "1000,-500,12.5" "$OPT"
 
 # 批处理（清单 TSV: in路径\tout路径\tA(9逗号分隔)\tb(3逗号分隔)），16 线程
 # 建议输出先写本地盘，再并行 cp 到目标
-/tmp/osgxform --batch jobs.tsv "$OPT" 16
+/tmp/osgb_vertex_transform --batch jobs.tsv "$OPT" 16
 ```
 
 ## 已知边界

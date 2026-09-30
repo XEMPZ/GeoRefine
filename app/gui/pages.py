@@ -1903,7 +1903,8 @@ class OsgbPage(QWidget):
         self.compress_combo.addItem("仅几何压缩（保留原纹理质量）", "Compressor=zlib")
         self.compress_combo.addItem("不压缩（体积约 3.8×）", "")
         self.bin_edit = QLineEdit("")
-        self.bin_edit.setPlaceholderText("osgxform 路径；留空则自动查找（native/osgxform 或 /tmp/osgxform）")
+        self.bin_edit.setPlaceholderText(
+            "留空则自动查找：app/osgb/cpp/osgb_vertex_transform 或 /tmp/osgb_vertex_transform")
         gv3.addWidget(QLabel("线程数"), 0, 0)
         gv3.addWidget(self.threads_spin, 0, 1)
         gv3.addWidget(QLabel("输出编码"), 0, 2)
@@ -2060,14 +2061,14 @@ class OsgbPage(QWidget):
     # ---------- 辅助 ----------
 
     def _find_binary(self) -> str:
-        """定位 osgxform：用户指定 > 项目内 native/ > /tmp/。"""
+        """定位 C++ 转换器：用户指定 > 项目内 app/osgb/cpp/ > /tmp/。"""
         given = self.bin_edit.text().strip()
         if given:
             return given
-        local = _ROOT / "app" / "osgb" / "native" / "osgxform"
+        local = _ROOT / "app" / "osgb" / "cpp" / "osgb_vertex_transform"
         if local.exists():
             return str(local)
-        return "/tmp/osgxform"
+        return "/tmp/osgb_vertex_transform"
 
     def pick_model(self):
         d = QFileDialog.getExistingDirectory(self, "选择 OSGB 模型根目录（含 metadata.xml）")
