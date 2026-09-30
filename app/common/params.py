@@ -304,10 +304,14 @@ class ParamApplier:
         for m in available_models(models_dir):
             if m["name"] == name and m["usable"]:
                 return GridModel(load_grid(m["path"]))
+        # 支持的格式不止 gtx（见 app/core/geoid.py 的 _READERS），因此提示里
+        # 不要写死 "gtx"，否则会误导用户以为只吃 gtx。
         raise ValueError(
             f"该参数与大地水准面模型「{name}」耦合绑定（高程=源大地高−ξ格网），"
             "models/ 目录中找不到此可用模型，无法按原口径计算，已停止。"
-            "请把该 gtx 放入 models/ 目录，或改用不含格网的参数。")
+            "请把该格网文件放入 models/ 目录"
+            "（支持 gtx / tif / csv / zgf / ggf / grd / bin），"
+            "或改用不含格网的参数。")
 
     def _poly_grid(self):
         name = self.param.get("geoid_grid")

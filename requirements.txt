@@ -3,8 +3,11 @@ numpy>=1.26
 Pillow>=10.0
 piexif>=1.1.0
 ezdxf>=1.1
-# 可选：读 GeoTIFF 格网（EGM2008 tif）需要
+# 读 GeoTIFF 格网（EGM2008 tif）需要。imagecodecs 是必需的：
+# EGM 系列的 tif 用浮点预测器（PREDICTOR.FLOATINGPOINT），tifffile 靠它解码，
+# 缺了会报 "requires the 'imagecodecs' package"。
 tifffile>=2024.1
+imagecodecs>=2024.1
 openpyxl>=3.1
 pyshp>=2.3
 pywin32>=306  ; sys_platform == 'win32'

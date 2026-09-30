@@ -96,5 +96,5 @@ GeoRefine/
 
 - DWG 依赖本机 AutoCAD（COM），无 AutoCAD 时该格式降级提示；
 - OSGB 转换需要 OpenSceneGraph 工具链；点云转换目前只支持 LAS/LAZ（用 laspy）；
-- 大地水准面格网仅支持 gtx；EGM 数据再分发条款自行确认（提供下载脚本）；
+- 大地水准面格网支持 gtx/tif/csv/zgf/ggf/grd/bin（tif 需 imagecodecs）；EGM 数据再分发条款自行确认（提供下载脚本）；
 - 其余见技术手册 §4。
