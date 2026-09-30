@@ -2063,7 +2063,8 @@ class OsgbPage(QWidget):
 
     #: 转换器缺失时的构建说明（打包版与源码版都适用）
     _BUILD_HINT = (
-        "OSGB 转换器尚未构建。它需要 OpenSceneGraph，请任选一种方式：\n"
+        "未找到 OSGB 转换器。免安装版自带 Windows 原生转换器（native/ 目录）；\n"
+        "若该文件缺失，可任选一种方式重建：\n"
         "\n"
         "【WSL / Linux】\n"
         "  sudo apt-get install -y libopenscenegraph-dev\n"
@@ -2085,16 +2086,22 @@ class OsgbPage(QWidget):
         if given:
             return given
         name = "osgb_vertex_transform"
+        # Windows 优先用**原生静态 exe**（无需 WSL），再退回 Linux 版（走 WSL）
         rels = [
             ("native",),                          # 打包版：exe 旁的 native/
-            ("app", "osgb", "cpp"),               # 源码版
-            ("src", "app", "osgb", "cpp"),        # 免安装版：源代码在 src/ 下
+            ("app", "osgb", "cpp", "native"),     # 免安装版：源码在 src/ 下
+            ("src", "app", "osgb", "cpp", "native"),
+            ("app", "osgb", "cpp"),               # 源码版：直接放在 cpp/
+            ("src", "app", "osgb", "cpp"),
             (),                                   # 软件目录根
         ]
+        names = [name + ".exe", name] if os.name == "nt" else [name]
         for rel in rels:
-            cand = _ROOT.joinpath(*rel) / name
-            if cand.exists():
-                return str(cand)
+            for n in names:
+                cand = _ROOT.joinpath(*rel) / n
+                if cand.exists():
+                    return str(cand)
+        # 都没有：Linux 版走 WSL
         return "/tmp/" + name
 
     def _binary_ready(self) -> bool:

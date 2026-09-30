@@ -12,6 +12,17 @@
 // 体积控制的推荐 optstring（实测，2.87 MB 瓦片）:
 //   "Compressor=zlib compression=1 WriteImageHint=IncludeFile"  → 0.81x
 //   （缺 Compressor=zlib 则 3.76x；缺 WriteImageHint 则 2.13x）
+// ---- 可移植的 stderr 行锁 ----------------------------------------------------
+// POSIX 用 flockfile/funlockfile；MinGW(Windows UCRT) 没有这两个，改用 _lock_file。
+// 目的只有一个：多线程下保证一行 FAIL 信息不被别的线程截断。
+#if defined(_WIN32)
+#  define VT_LOCK_FILE(f)   _lock_file(f)
+#  define VT_UNLOCK_FILE(f) _unlock_file(f)
+#else
+#  define VT_LOCK_FILE(f)   flockfile(f)
+#  define VT_UNLOCK_FILE(f) funlockfile(f)
+#endif
+
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
 #include <osgDB/Options>
@@ -150,10 +161,10 @@ static void worker(const std::vector<const Job*>& jobs, const std::string& optst
             add(&st->tw, r.tw);
         } else {
             st->fail.fetch_add(1, std::memory_order_relaxed);
-            // 失败原因打到 stderr，便于定位（多线程下用 flockfile 保证整行）
-            flockfile(stderr);
+            // 失败原因打到 stderr，便于定位（多线程下加锁保证整行）
+            VT_LOCK_FILE(stderr);
             fprintf(stderr, "[FAIL] read/write failed: %s\n", j.in.c_str());
-            funlockfile(stderr);
+            VT_UNLOCK_FILE(stderr);
         }
     }
 }

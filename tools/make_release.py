@@ -78,10 +78,17 @@ def assemble():
 
     for sub, note in [("models", "大地水准面格网（gtx）放这里"),
                       ("params", "转换参数（JSON）放这里"),
-                      ("logs", "操作台账自动写入这里")]:
+                      ("logs", "操作台账自动写入这里"),
+                      ("native", "Windows 原生 OSGB 转换器")]:
         d = OUT / sub
         d.mkdir(exist_ok=True)
         (d / "放这里.txt").write_text(note + "\n", encoding="utf-8")
+
+    # Windows 原生转换器（全静态，无需 WSL/OSG）——OSGB 页会自动识别
+    native = ROOT / "app" / "osgb" / "cpp" / "native" / "osgb_vertex_transform.exe"
+    if native.exists():
+        shutil.copy2(native, OUT / "native" / native.name)
+        print("    内置原生转换器：%.1f MB" % (native.stat().st_size / 1048576))
 
     # 内置全球 EGM96 格网（4 MB），开箱即可算高程异常；
     # 中国区域高精度格网请自行放入 models/
@@ -141,7 +148,8 @@ def verify():
     must = ["GeoRefine.exe", "_internal", "src/main.py", "src/app",
             "docs/技术手册.md", "LICENSE", "使用说明.txt",
             "models", "params", "logs", "config.json",
-            "src/app/osgb/cpp/osgb_vertex_transform.cpp"]
+            "src/app/osgb/cpp/osgb_vertex_transform.cpp",
+            "native/osgb_vertex_transform.exe", "docs/BUILD_WINDOWS_OSG.md"]
     bad = [m for m in must if not (OUT / m).exists()]
     if bad:
         raise SystemExit("缺少：%s" % bad)
