@@ -11,7 +11,7 @@
   · 排除用不到的 Qt 模块，显著减小体积。
 """
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
@@ -26,6 +26,11 @@ hiddenimports = [
 ]
 hiddenimports += collect_submodules("laspy")
 hiddenimports += collect_submodules("pyproj")
+# imagecodecs 是 EGM 系列 GeoTIFF 格网的必需依赖（浮点预测器解码）。
+# 它是一个"薄壳 + 几十个独立 .pyd 编解码器"的包，PyInstaller 默认只抓到
+# imagecodecs/_shared.pyd，其余全漏 —— 打包版读 tif 会失败。
+# 因此显式收集全部子模块与动态库。
+
 
 excludes = [
     # 用不到的 Qt 组件（体积大头）
@@ -45,11 +50,17 @@ excludes = [
     "PyQt5", "PyQt6", "PySide2",
 ]
 
+# imagecodecs 必须用 collect_all：它由 __init__.py + 几十个独立 .pyd 编解码器组成，
+# collect_dynamic_libs 只搬 .pyd 不带 __init__.py，会变成"命名空间包"，
+# 结果 import imagecodecs 不报错但拿不到任何编解码器，读 tif 仍然失败。
+_ic_datas, _ic_bins, _ic_hidden = collect_all("imagecodecs")
+hiddenimports += _ic_hidden
+
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
-    datas=[],
+    binaries=_ic_bins,
+    datas=_ic_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
