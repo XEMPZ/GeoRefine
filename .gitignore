@@ -7,3 +7,5 @@ _POS备份/
 *.i64
 *.idb
 config.json
+dist/
+build/

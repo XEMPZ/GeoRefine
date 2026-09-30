@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QToolButton,
                                QVBoxLayout, QWidget, QDialog, QDialogButtonBox, QFormLayout)
 
+from app import app_root
 from app.common import hconv
 from app.common.io_csv import read_points_csv
 from app.common.logutil import OpLog
@@ -30,7 +31,7 @@ from app.gui.styles import ACCENT, ACCENT2, WARN
 from app.gui.workers import CadWorker, PhotoBatchWorker, RollbackWorker, ScanWorker
 from app.osgb import flash
 
-_ROOT = Path(__file__).resolve().parent.parent.parent
+_ROOT = app_root()   # 源码运行时=项目根；打包后=exe 所在目录
 MODELS_DIR = _ROOT / "models"
 PARAMS_DIR = _ROOT / "params"
 
@@ -2060,15 +2061,51 @@ class OsgbPage(QWidget):
 
     # ---------- 辅助 ----------
 
+    #: 转换器缺失时的构建说明（打包版与源码版都适用）
+    _BUILD_HINT = (
+        "OSGB 转换器尚未构建。它需要 OpenSceneGraph，请任选一种方式：\n"
+        "\n"
+        "【WSL / Linux】\n"
+        "  sudo apt-get install -y libopenscenegraph-dev\n"
+        "  bash app/osgb/cpp/build.sh /tmp/osgb_vertex_transform\n"
+        "\n"
+        "【Windows 原生】需要一个 Windows 版 OSG 工具链，构建后用上方的\n"
+        "「转换器路径」直接指到生成的 exe。\n"
+        "\n"
+        "源码在 app/osgb/cpp/osgb_vertex_transform.cpp（免安装版在 src/ 下）。\n"
+        "未构建不影响其它功能；点云（LAS）转换无需任何外部工具。")
+
     def _find_binary(self) -> str:
-        """定位 C++ 转换器：用户指定 > 项目内 app/osgb/cpp/ > /tmp/。"""
+        """定位 C++ 转换器。
+
+        查找顺序：用户指定 > 打包版 exe 旁的 native/ > app/osgb/cpp/ >
+        免安装版的 src/app/osgb/cpp/ > 软件目录根 > WSL /tmp/。
+        """
         given = self.bin_edit.text().strip()
         if given:
             return given
-        local = _ROOT / "app" / "osgb" / "cpp" / "osgb_vertex_transform"
-        if local.exists():
-            return str(local)
-        return "/tmp/osgb_vertex_transform"
+        name = "osgb_vertex_transform"
+        rels = [
+            ("native",),                          # 打包版：exe 旁的 native/
+            ("app", "osgb", "cpp"),               # 源码版
+            ("src", "app", "osgb", "cpp"),        # 免安装版：源代码在 src/ 下
+            (),                                   # 软件目录根
+        ]
+        for rel in rels:
+            cand = _ROOT.joinpath(*rel) / name
+            if cand.exists():
+                return str(cand)
+        return "/tmp/" + name
+
+    def _binary_ready(self) -> bool:
+        """转换器是否可用（用户指定路径存在，或能找到本地构建产物）。"""
+        given = self.bin_edit.text().strip()
+        if given:
+            return Path(given).exists()
+        b = self._find_binary()
+        if b.startswith("/"):
+            return True          # WSL 路径无法在本机判断，交给运行时报告
+        return Path(b).exists() and Path(b).is_file()
 
     def pick_model(self):
         d = QFileDialog.getExistingDirectory(self, "选择 OSGB 模型根目录（含 metadata.xml）")
@@ -2208,6 +2245,10 @@ class OsgbPage(QWidget):
         name = self.param_combo.currentData()
         if not model or not name:
             _quiet_warn(self, "提示", "请先选择模型目录与转换参数")
+            return
+        # 前置检查：转换器没构建就明确说清怎么构建，而不是等运行时抛一堆错
+        if not self._binary_ready():
+            _quiet_warn(self, "缺少 OSGB 转换器", self._BUILD_HINT)
             return
         if not out:
             out = str(Path(model).parent / (Path(model).name + "_转换结果"))
@@ -2484,11 +2525,14 @@ class LasPage(QWidget):
         except Exception as e:  # noqa: BLE001
             self.param_hint.setText("读取参数库失败：%s" % e)
             return
-        try:
-            self.param_combo.currentIndexChanged.disconnect()
-        except Exception:  # noqa: BLE001
-            pass
+        # 只在真的连过时断开，避免 Qt 打 "Failed to disconnect (None)" 警告
+        if getattr(self, "_param_hint_connected", False):
+            try:
+                self.param_combo.currentIndexChanged.disconnect(self._update_param_hint)
+            except Exception:  # noqa: BLE001
+                pass
         self.param_combo.currentIndexChanged.connect(self._update_param_hint)
+        self._param_hint_connected = True
         self._update_param_hint()
 
     def _update_param_hint(self):

@@ -1,37 +1,95 @@
 # GeoRefine — 似大地水准面精化与坐标转换软件
 
+**v1.1** · 作者 求道之心 · MIT License · <https://github.com/XEMPZ/GeoRefine>
+
 把 GNSS 大地坐标（B, L, 大地高 H）与工程用的平面坐标（x, y）和正常高 h 打通：
 公共点对一键解算转换参数（自动比选最优方法）→ 批量应用到坐标表、CAD 图、SHP 文件，
-或直接回写无人机照片的 POS 高程，实现免相控测量。MIT 许可，自由使用/修改/分发。
+或直接落到无人机照片 POS、倾斜摄影 OSGB 模型、LAS 点云上。
+
+## 下载与安装
+
+| 方式 | 适用 | 说明 |
+|---|---|---|
+| **[免安装版](https://github.com/XEMPZ/GeoRefine/releases)** | 只想用，不想装 Python | 下载 zip 解压，双击 `GeoRefine.exe`。**含全部源代码**，遇到 BUG 可直接用任意 AI 编程工具自行修改 |
+| 源码运行 | 要改代码/参与开发 | `pip install -r requirements.txt`，项目根 `python main.py`（Python ≥3.13） |
+
+## 功能
 
 | 功能 | 说明 |
 |---|---|
 | 控制点转换 | 导入公共点对，自动比选四参数/三参数/七参数/七参数+投影+四参数/投影反算链与高程方案，残差逐点回填，参数存库 |
-| 参数应用转换 | 用已保存参数批量转换坐标清单，平面/高程可拆分 |
+| 参数应用转换 | 用已保存参数批量转换坐标清单，**平面/高程可拆分** |
 | 照片 POS 处理 | 无人机照片 EXIF/XMP 椭球高批量换算为正常高并原位写回；自动备份、逐张台账、可回滚 |
+| **OSGB 模型转换** | 倾斜摄影模型**逐顶点**转换坐标/高程；SRSOrigin 不变，轴序自动换算；平面/高程可拆分 |
+| **点云模型转换** | LAS/LAZ 逐点转换 X/Y/Z；**只动坐标**，其余属性与头部元数据一字不改；平面/高程可拆分 |
 | 多项式转换 | 二维/三维多项式复杂坐标系转换（完全二次、重心化、与主流商用内核算法口径对齐） |
 | 文件转换 | DXF/DWG/SHP/PGDB(MDB)/文本点文件整目录批量转换 |
-| 精度对比 | 两个参数喂同一批点对逐点比残差，量化"该用哪个" |
+| 精度对比 | 两个参数喂同一批点对逐点比残差，量化该用哪个 |
 | 高斯投影换带 / 空间转换 | UTM 尺度、任意带、抵偿投影面、严密/近似工程椭球；XYZ/BLH/xyH 六型互转 |
 | 参数库 / 台账 | 参数 JSON 导入导出、自定义椭球全局可用；操作全程留痕 |
 
 ## 快速上手
 
-1. `pip install -r requirements.txt`（Python ≥3.13），项目根 `python main.py`；
-2. 大地水准面格网（gtx）放入 `models/`（或 `python tools/download_geoid_models.py`）；
+1. 启动软件（免安装版双击 `GeoRefine.exe`；源码版 `python main.py`）；
+2. 大地水准面格网（gtx）放入软件目录的 `models/`（或 `python tools/download_geoid_models.py`）；
 3. 控制点转换页导入点对 → 计算与比选 → 保存参数 → 其余页面直接选用。
 
 ## 约定
 
 平面坐标 x=北、y=东；高程异常 ξ = 大地高 − 正常高；角度支持 d.ms 编码（105.302568 = 105°30′25.68″）与十进制度。
-含带号高斯坐标自动识别分带并锁定中央子午线。详见 `docs/技术手册.md`。
+含带号高斯坐标自动识别分带并锁定中央子午线。
+OSGB 顶点为 (东,北,高)、LAS 的 X=东 Y=北，与本软件 (北,东) 相反，**软件自动换算**。
+详见 `docs/技术手册.md`。
+
+## 大模型数据转换
+
+两个转换器与单点转换**共用同一套坐标换算链路**（`apply_points`），不存在两套算法。
+
+| | OSGB 倾斜摄影 | LAS/LAZ 点云 |
+|---|---|---|
+| 实测性能 | 1537 瓦片 / 2098 万顶点 / 16 线程 **约 23 秒** | **每秒上千万点**；4913 万点单文件约 7 秒（含读写） |
+| 实现 | C++ 内存态遍历（`app/osgb/cpp/`） | 整块矩阵化（numpy） |
+| 完整性 | SRSOrigin 不变 | 非坐标属性与头部元数据逐位保留 |
+
+**OSGB 需要 OpenSceneGraph**。免安装版不含该工具链，首次使用请按界面提示构建：
+
+```bash
+# WSL / Linux
+sudo apt-get install -y libopenscenegraph-dev
+bash app/osgb/cpp/build.sh /tmp/osgb_vertex_transform
+```
+
+未构建时该页会明确报出缺失，其余功能不受影响。**LAS 点云转换无需任何外部工具。**
 
 ## 精度验证
 
 高斯投影/换带与权威实现逐位对照（144 组真值，最大偏差 ≤0.5 µm）；正算另与国际开源库 PROJ 对照。
-多项式转换按商用内核反编译口径的参考实现对拍（良态数据 5e-12 一致）。全部结论见 `docs/技术手册.md` §3。
+多项式转换按商用内核反编译口径的参考实现对拍（良态数据 5e-12 一致）。
+OSGB/LAS 端到端与 `apply_points` 逐点对照（偏差 ≤1e-9 m，受源数据量化步长限制）。
+全部结论见 `docs/技术手册.md` §3。
+
+## 自行修改（源码随包提供）
+
+免安装版 `GeoRefine/` 目录里同时包含完整源代码：
+
+```
+GeoRefine/
+  GeoRefine.exe        <- 双击运行（无需 Python）
+  _internal/           <- Python 运行时与依赖（勿手动改）
+  src/                 <- 完整源代码（app/ tests/ tools/ docs/ main.py GeoRefine.spec）
+  models/              <- 大地水准面格网放这里
+  params/              <- 转换参数放这里（JSON，可直接拷给别人）
+  logs/                <- 操作台账
+  config.json          <- 可选项，如 {"enable_poly3d": true}
+```
+
+`src/` 里的代码与 exe 内的逻辑一致，遇到 BUG 可直接把它交给任意 AI 编程工具修改；
+改完用 `pip install -r src/requirements.txt` + `python src/main.py` 即可验证，
+或按 `src/GeoRefine.spec` 重新打包。
 
 ## 已知限制
 
-DWG 依赖本机 AutoCAD（COM）；EGM 格网再分发条款自行确认（提供下载脚本）；
-其余见技术手册 §4。
+- DWG 依赖本机 AutoCAD（COM），无 AutoCAD 时该格式降级提示；
+- OSGB 转换需要 OpenSceneGraph 工具链；点云转换目前只支持 LAS/LAZ（用 laspy）；
+- 大地水准面格网仅支持 gtx；EGM 数据再分发条款自行确认（提供下载脚本）；
+- 其余见技术手册 §4。
