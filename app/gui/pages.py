@@ -28,6 +28,7 @@ from app.logic import photo_spec as _pspec
 from app.logic import accuracy as _acc
 from app.gui.styles import ACCENT, ACCENT2, WARN
 from app.gui.workers import CadWorker, PhotoBatchWorker, RollbackWorker, ScanWorker
+from app.osgb import flash
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 MODELS_DIR = _ROOT / "models"
@@ -234,13 +235,35 @@ class HomePage(QWidget):
         ("控制点转换", "把 GNSS 大地坐标与施工坐标的公共点对导入，软件自动把所有可行方案算一遍并按精度排序，挑出最优的转换参数存进参数库。", 4),
         ("参数应用转换", "拿参数库里保存好的参数，批量转换一份坐标清单（粘贴或导入表格即可）。", 3),
         ("照片 POS 处理", "特色功能：把无人机照片里的 POS 大地高直接换成正常高并写回照片，实现免相控测量。", 5),
-        ("多项式转换", "复杂坐标系转换的补充手段（二维/三维多项式）；算法口径与主流商用内核对齐。", 6),
-        ("文件转换", "把整个文件夹的 CAD（DXF/DWG）、SHP、文本点文件按参数批量转换坐标与高程。", 7),
-        ("精度对比", "同一批点对喂给两个不同参数（例如不同大地水准面模型），逐点比残差，告诉你该用哪个。", 8),
+        ("OSGB 模型转换", "对倾斜摄影 OSGB 模型的每个顶点做坐标/高程转换；SRSOrigin 保持不变，模型可直接在原有引擎里加载。", 6),
+        ("点云模型转换", "LAS/LAZ 点云逐点转换 X/Y/Z；<b>只动坐标，强度/回波/分类/GPS 时间/RGB 等一律原样保留</b>。", 7),
+        ("多项式转换", "复杂坐标系转换的补充手段（二维/三维多项式）；算法口径与主流商用内核对齐。", 8),
+        ("文件转换", "把整个文件夹的 CAD（DXF/DWG）、SHP、文本点文件按参数批量转换坐标与高程。", 9),
+        ("精度对比", "同一批点对喂给两个不同参数（例如不同大地水准面模型），逐点比残差，告诉你该用哪个。", 10),
         ("高斯投影换带", "单点的高斯投影/换带计算：支持 UTM 尺度、加常数、抵偿投影面与严密/近似工程椭球。", 1),
         ("空间坐标转换", "空间直角（XYZ）、大地（BLH）、平面+高程（xyH）六种形式两两互转。", 2),
-        ("参数库", "管理算好的转换参数与椭球：导入导出、删除、查看明细；文件都放在 params/ 目录，可直接拷贝给别人。", 9),
-        ("处理台账", "每次计算、回写、转换都留痕，可导出 CSV、可清空。", 10),
+        ("参数库", "管理算好的转换参数与椭球：导入导出、删除、查看明细；文件都放在 params/ 目录，可直接拷贝给别人。", 11),
+        ("处理台账", "每次计算、回写、转换都留痕，可导出 CSV、可清空。", 12),
+    ]
+
+    # ★ 特色功能（首页卡片）：标题、说明、导航页号
+    _FEATURES = [
+        ("无人机照片 POS 处理",
+         "免相控测量的关键一步。直接读取照片 EXIF/XMP 里的 POS 椭球高，批量换算成施工坐标系的正常高后"
+         "<b>原位写回照片</b>——主流建图软件开启“POS 高程模式”即可直接出正常高成果，外业不再打像控点。"
+         "支持多目录递归扫描、dry-run 预览、自动备份（_POS备份/，永不二次覆盖）、逐张台账与一键回滚。",
+         5),
+        ("OSGB 模型转换",
+         "把坐标转换直接作用到倾斜摄影模型的<b>每个顶点</b>上，转完还能在原有引擎里正常加载。"
+         "平面与高程可独立勾选；支持平面源参数（四参数/三参数/二维七参数/平面多项式）与"
+         "大地源参数（七参数链/直接投影）。高程含大地水准面格网时按源侧经纬度插值 ξ；"
+         "OSGB 的 (东,北) 轴序自动换算。",
+         6),
+        ("点云模型转换",
+         "LAS/LAZ 点云逐点转换 X/Y/Z，<b>只动坐标</b>——强度、回波、分类、GPS 时间、RGB、扫描角、"
+         "点源 ID 与自定义维度一律原样保留，点格式与 scale/offset 也不改。"
+         "平面与高程同样可独立勾选；带号自动识别，无 CRS 的数据可手填中央子午线。",
+         7),
     ]
 
     def __init__(self, parent=None):
@@ -251,14 +274,20 @@ class HomePage(QWidget):
 
         head = QLabel(
             "<b style='font-size:15pt;color:#2a6f8e'>GeoRefine — 似大地水准面精化与坐标转换软件</b>"
-            "<span style='color:#6b7a83'>　v1.0</span>")
+            "<span style='color:#6b7a83'>　v1.1</span>")
         head.setTextFormat(Qt.RichText)
         v.addWidget(head)
         intro = QLabel(
+            "<b>功能说明</b><br>"
             "测量外业拿到的是 GNSS 大地坐标（B, L, 大地高 H），而设计和施工用的是平面坐标（x, y）和水准正常高 h——"
-            "两者差着一个“高程异常 ξ”，还常常差着一套坐标系。本软件把这条链路打通："
-            "<b>控制点对一键解算转换参数（自动比选最优方法）→ 批量应用到坐标表、CAD 图、SHP 文件，"
-            "或直接回写无人机照片的 POS 高程</b>。平面坐标 x=北、y=东；高程异常 ξ = 大地高 − 正常高。")
+            "两者差着一个“高程异常 ξ”，还常常差着一套坐标系。本软件把这条链路完整打通：<br>"
+            "① <b>解算</b>：导入公共点对，自动把所有可行方案算一遍并按残差排序，挑出最优参数存入参数库；<br>"
+            "② <b>应用</b>：用同一套参数批量转换坐标表、CAD 图（DXF/DWG）、SHP/文本点文件；<br>"
+            "③ <b>落到数据上</b>：<b>回写无人机照片 POS 高程</b>（免相控）、"
+            "<b>转换 OSGB 倾斜摄影模型顶点</b>、<b>转换 LAS/LAZ 点云坐标</b>；<br>"
+            "④ <b>验证</b>：精度对比页把不同参数/大地水准面模型喂同一批点，用数据告诉你该用哪个。<br>"
+            "坐标约定：平面 x=北、y=东；高程异常 ξ = 大地高 − 正常高；"
+            "OSGB 与 LAS 的 (东,北) 轴序自动换算。")
         intro.setWordWrap(True)
         v.addWidget(intro)
 
@@ -272,29 +301,36 @@ class HomePage(QWidget):
             "· <b>口径经过严格验证</b>：高斯投影与换带和权威行业实现的 144 组真值逐位一致（偏差 ≤0.5 µm）；"
             "多项式转换与主流商用内核的公开行为口径对齐；d.ms 度分秒编码与国产手簿一致。",
             "· <b>全程留痕、可回滚</b>：参数存参数库（JSON，可直接拷走）、操作有台账、照片回写前自动备份原始 POS。",
+            "· <b>大模型数据也能直接改</b>：倾斜摄影 OSGB 模型与 LAS/LAZ 点云按顶点批量转换坐标高程——"
+            "OSGB 用内存态遍历（全模型 1500 余瓦片约 23 秒），点云整块矩阵化（每秒上千万点）；"
+            "点云转换只动 X/Y/Z，其余属性与头部元数据一字不改。",
         ]:
             lab = QLabel(t)
             lab.setWordWrap(True)
             av.addWidget(lab)
         v.addWidget(adv)
 
-        feat = QGroupBox("★ 特色功能：无人机照片 POS 处理 —— 彻底免相控测量")
+        feat = QGroupBox("★ 特色功能")
         fv = QVBoxLayout(feat)
-        feat_lab = QLabel(
-            "传统无人机建图要在测区实测一批像控点（RTK 或全站仪），费时费力。"
-            "本软件直接读取照片 EXIF/XMP 里记录的 POS 定位数据，把其中的椭球高批量换算成施工坐标系的正常高后<b>原位写回照片</b>："
-            "主流建图软件开启“POS 高程模式”即可直接出正常高成果，外业不再打像控点。"
-            "支持递归多目录扫描、 dry-run 预览、自动备份（_POS备份/ 目录，永不二次覆盖）、逐张台账与一键回滚；"
-            "换算用的参数与大地水准面模型由你选择，精度影响在“精度对比”页量化验证。")
-        feat_lab.setWordWrap(True)
-        fv.addWidget(feat_lab)
-        fb = QPushButton("进入照片 POS 处理 →")
-        fb.setProperty("class", "secondary")
-        fb.clicked.connect(lambda: self._goto(5))
-        fbr = QHBoxLayout()
-        fbr.addStretch(1)
-        fbr.addWidget(fb)
-        fv.addLayout(fbr)
+        fgrid = QGridLayout()
+        fgrid.setSpacing(10)
+        for col, (title, desc, nav) in enumerate(self._FEATURES):
+            card = QGroupBox(title)
+            cv = QVBoxLayout(card)
+            lab = QLabel(desc)
+            lab.setWordWrap(True)
+            cv.addWidget(lab)
+            btn = QPushButton("进入 →")
+            btn.setProperty("class", "secondary")
+            btn.setFixedWidth(90)
+            btn.clicked.connect(lambda _=False, k=nav: self._goto(k))
+            cr = QHBoxLayout()
+            cr.addStretch(1)
+            cr.addWidget(btn)
+            cv.addLayout(cr)
+            fgrid.addWidget(card, 0, col)
+            fgrid.setColumnStretch(col, 1)
+        fv.addLayout(fgrid)
         v.addWidget(feat)
 
         tour = QGroupBox("功能导览（点击进入）")
@@ -344,7 +380,8 @@ class HomePage(QWidget):
     def refresh_status(self):
         from app.core.geoid import available_models
         models = available_models(MODELS_DIR)
-        usable = [m for m in models if m["usable"]]
+        # 测试用格网（文件名以 _ 开头）不计入正式模型数，避免误导用户
+        usable = [m for m in models if m["usable"] and not m["name"].startswith("_")]
         lib = ParamLibrary(PARAMS_DIR).list()
         self.status_label.setText(
             f"格网模型：{len(usable)} 个可用（{', '.join(m['name'] for m in usable[:3])}…）    "
@@ -1721,6 +1758,1005 @@ POLY_DISCLAIMER = ("适用性说明：当重合点分布均匀、数量足够，
 _MODEL_HEADERS = ["点号", "源x₁(m)", "源y₁(m)", "源h/H", "目标x₂(m)", "目标y₂(m)", "目标h/H"]
 
 
+class OsgbPage(QWidget):
+    """OSGB 模型坐标/高程转换页。
+
+    设计约束（来自项目契约）：
+      - 转换算法来自已实测的 \`app.osgb\` 模块，不在此重复实现
+      - 实算交给 \`app.osgb.flash\`（内存态 C++ 工具驱动，实测 1537 瓦片 / 23 s）
+      - SRSOrigin 保持不动：顶点承载世界坐标位移，局部坐标系不变
+      - 绝不覆盖输入：输出目录与模型目录相同会被拒绝
+    """
+
+    MODES = [("xyz", "平面 + 高程（XY 与 Z 都转换）"),
+             ("xy", "仅平面坐标（只改 XY，Z 不变）"),
+             ("z", "仅高程（只改 Z，XY 不变）")]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._worker = None
+        self._result = None
+        v = QVBoxLayout(self)
+        v.addWidget(_title(
+            "OSGB 模型坐标转换",
+            "对倾斜摄影 OSGB 模型逐顶点做坐标/高程转换。"
+            "顶点承载世界坐标位移，SRSOrigin 保持不变（局部坐标系不动）。\n"
+            "平面与高程可独立勾选：勾哪个转哪个，不勾的原值逐位透传。\n"
+            "参数来源不限——平面源（四参数/三参数/二维七参数/平面多项式）直接套用；"
+            "大地源（七参数链/直接投影）先按源侧投影把顶点反算为经纬度再走参数链。\n"
+            "高程含大地水准面格网时，ξ 按源侧经纬度插值；请在下方填源侧投影参数。"
+            "坐标轴序：OSGB 为 (东,北)，本软件测量约定为 (北,东)，已自动换算。"))
+
+        # 1. 模型与输出
+        g1 = QGroupBox("1. 模型目录与输出")
+        gv1 = QGridLayout(g1)
+        self.model_edit = QLineEdit()
+        self.model_edit.setPlaceholderText("含 metadata.xml 的模型根目录")
+        self.btn_model = QPushButton("浏览…")
+        self.btn_model.clicked.connect(self.pick_model)
+        self.out_edit = QLineEdit()
+        self.out_edit.setPlaceholderText("留空则自动取 <模型目录>_转换结果")
+        self.btn_out = QPushButton("浏览…")
+        self.btn_out.clicked.connect(self.pick_out)
+        gv1.addWidget(QLabel("模型目录"), 0, 0)
+        gv1.addWidget(self.model_edit, 0, 1)
+        gv1.addWidget(self.btn_model, 0, 2)
+        gv1.addWidget(QLabel("输出目录"), 1, 0)
+        gv1.addWidget(self.out_edit, 1, 1)
+        gv1.addWidget(self.btn_out, 1, 2)
+        self.info_label = QLabel("未扫描")
+        self.info_label.setObjectName("muted")
+        self.info_label.setWordWrap(True)
+        gv1.addWidget(self.info_label, 2, 0, 1, 3)
+        v.addWidget(g1)
+
+        # 2. 转换参数
+        g2 = QGroupBox("2. 转换参数与模式")
+        gv2 = QGridLayout(g2)
+        self.param_combo = QComboBox()
+        self.btn_reload = QPushButton("刷新")
+        self.btn_reload.clicked.connect(self.reload_params)
+        # 平面 / 高程解耦：两个开关独立勾选，与「参数应用转换」页同口径
+        self.chk_plane = QCheckBox("平面转换（x=北, y=东）")
+        self.chk_plane.setChecked(True)
+        self.chk_plane.setToolTip(
+            "应用参数的平面部分（四参数/三参数/二维七参数/投影/多项式）。\n"
+            "不勾选则 XY 原值透传。")
+        self.chk_height = QCheckBox("高程转换（Z）")
+        self.chk_height.setChecked(True)
+        self.chk_height.setToolTip(
+            "应用参数的高程部分：高程拟合 / 大地水准面格网 ξ / 多项式高程。\n"
+            "不勾选则 Z 原值透传。\n"
+            "带大地水准面格网的参数需源侧投影（projection_src.l0）以便反算经纬度。")
+        gv2.addWidget(QLabel("参数"), 0, 0)
+        gv2.addWidget(self.param_combo, 0, 1, 1, 2)
+        gv2.addWidget(self.btn_reload, 0, 3)
+        gv2.addWidget(QLabel("转换内容"), 1, 0)
+        ch_box = QHBoxLayout()
+        ch_box.addWidget(self.chk_plane)
+        ch_box.addWidget(self.chk_height)
+        ch_box.addStretch(1)
+        gv2.addLayout(ch_box, 1, 1, 1, 3)
+        self.param_hint = QLabel("")
+        self.param_hint.setObjectName("muted")
+        self.param_hint.setWordWrap(True)
+        gv2.addWidget(self.param_hint, 3, 0, 1, 4)
+        v.addWidget(g2)
+
+        # 3. 投影参数（与其余模块同口径：带号 / 中央子午线 / 假东）
+        gproj = QGroupBox("3. 投影参数（平面坐标含带号、或参数未配源侧投影时必填）")
+        gvp = QGridLayout(gproj)
+        self.proj_detected = QLabel("未识别")
+        self.proj_detected.setObjectName("muted")
+        self.proj_detected.setWordWrap(True)
+        self.chk_use_proj = QCheckBox("启用源侧投影参数")
+        self.chk_use_proj.setToolTip(
+            "勾选后，下面填写的带号/L0/假东会作为**源侧投影**参与计算：\n"
+            "  · 把平面顶点反算为经纬度（大地源参数、大地水准面格网ξ 必需）\n"
+            "  · 剥离东坐标里的高斯带号\n"
+            "参数自带的 projection_src 优先级低于此处，勾选即覆盖。")
+        self.chk_zone = QCheckBox("SRSOrigin 东坐标含带号")
+        self.chk_zone.setToolTip(
+            "ContextCapture 有时把高斯带号写进东坐标（如 39595251 = 39带 + 595251）。\n"
+            "勾选后按带号剥离再反算经纬度；判错会导致反算完全失真，界面会自动识别。")
+        self.zone_spin = QSpinBox()
+        self.zone_spin.setRange(0, 60)
+        self.zone_spin.setToolTip("高斯带号（0 = 不带号）")
+        self.l0_spin = QDoubleSpinBox()
+        self.l0_spin.setRange(-180.0, 180.0)
+        self.l0_spin.setDecimals(8)
+        self.l0_spin.setSuffix(" °")
+        self.l0_spin.setToolTip("源侧中央子午线 L0（度）。带号可确定时自动填入。")
+        self.y0_spin = QDoubleSpinBox()
+        self.y0_spin.setRange(-1e7, 1e7)
+        self.y0_spin.setDecimals(3)
+        self.y0_spin.setValue(500000.0)
+        self.y0_spin.setToolTip("源侧假东 y0（国内惯例 500000 m）")
+        self.btn_proj_auto = QPushButton("从模型自动识别")
+        self.btn_proj_auto.setToolTip("读 metadata.xml 的 SRSOrigin，按东坐标量级判定是否含带号并推算 L0")
+        self.btn_proj_auto.clicked.connect(self.do_detect_proj)
+        self.chk_zone.toggled.connect(self._on_zone_toggled)
+        self.chk_use_proj.toggled.connect(self._on_proj_toggled)
+        gvp.addWidget(QLabel("源侧投影"), 0, 0)
+        gvp.addWidget(self.btn_proj_auto, 0, 1)
+        gvp.addWidget(self.chk_use_proj, 0, 2, 1, 2)
+        gvp.addWidget(self.chk_zone, 1, 2, 1, 2)
+        gvp.addWidget(QLabel("带号"), 2, 0)
+        gvp.addWidget(self.zone_spin, 2, 1)
+        gvp.addWidget(QLabel("中央子午线 L0"), 2, 2)
+        gvp.addWidget(self.l0_spin, 2, 3)
+        gvp.addWidget(QLabel("假东 y0"), 3, 0)
+        gvp.addWidget(self.y0_spin, 3, 1)
+        gvp.addWidget(self.proj_detected, 4, 0, 1, 4)
+        v.addWidget(gproj)
+
+        # 4. 高级选项
+        g3 = QGroupBox("4. 高级")
+        gv3 = QGridLayout(g3)
+        self.threads_spin = QSpinBox()
+        self.threads_spin.setRange(1, 64)
+        self.threads_spin.setValue(min(16, max(1, os.cpu_count() or 4)))
+        self.threads_spin.setToolTip("C++ 工具内部线程数；实测 16 线程在整模型上接近 I/O 上限")
+        self.compress_combo = QComboBox()
+        self.compress_combo.addItem("压缩（推荐，实测体积 ~0.8–1.7×）",
+                                    flash.DEFAULT_OPTIONS)
+        self.compress_combo.addItem("仅几何压缩（保留原纹理质量）", "Compressor=zlib")
+        self.compress_combo.addItem("不压缩（体积约 3.8×）", "")
+        self.bin_edit = QLineEdit("")
+        self.bin_edit.setPlaceholderText("osgxform 路径；留空则自动查找（native/osgxform 或 /tmp/osgxform）")
+        gv3.addWidget(QLabel("线程数"), 0, 0)
+        gv3.addWidget(self.threads_spin, 0, 1)
+        gv3.addWidget(QLabel("输出编码"), 0, 2)
+        gv3.addWidget(self.compress_combo, 0, 3)
+        gv3.addWidget(QLabel("转换器"), 1, 0)
+        gv3.addWidget(self.bin_edit, 1, 1, 1, 3)
+        v.addWidget(g3)
+
+        # 5. 执行
+        g4 = QGroupBox("5. 执行")
+        gv4 = QVBoxLayout(g4)
+        r4 = QHBoxLayout()
+        self.btn_preview = QPushButton("检查")
+        self.btn_preview.setToolTip("只读检查：统计瓦片、解析 SRS、试算仿射系数，不写任何文件")
+        self.btn_run = QPushButton("开始转换")
+        self.btn_run.setToolTip("整模型转换；输出写入指定目录，绝不覆盖输入")
+        self.btn_cancel = QPushButton("取消")
+        self.btn_cancel.setEnabled(False)
+        r4.addWidget(self.btn_preview)
+        r4.addWidget(self.btn_run)
+        r4.addWidget(self.btn_cancel)
+        r4.addStretch(1)
+        gv4.addLayout(r4)
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 0)          # 不定长：整批一次调用，无逐瓦片进度
+        self.bar.setVisible(False)
+        gv4.addWidget(self.bar)
+        self.status_label = QLabel("就绪")
+        self.status_label.setObjectName("muted")
+        self.status_label.setWordWrap(True)
+        gv4.addWidget(self.status_label)
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMaximumHeight(150)
+        gv4.addWidget(self.log_view)
+        v.addWidget(g4)
+        v.addStretch(1)
+
+        self.chk_plane.toggled.connect(self._update_param_hint)
+        self.chk_height.toggled.connect(self._update_param_hint)
+        self._detected_zone = None
+        self.btn_preview.clicked.connect(self.do_check)
+        self.btn_run.clicked.connect(self.do_run)
+        self.btn_cancel.clicked.connect(self.do_cancel)
+        self.reload_params()
+
+    def _mode_label(self) -> str:
+        """勾选框 → 人类可读描述（日志/对话框用）。"""
+        try:
+            m = self.current_mode()
+        except ValueError:
+            return "（未选择）"
+        return {"xyz": "平面 + 高程", "xy": "仅平面", "z": "仅高程"}[m]
+
+    def do_detect_proj(self):
+        """从模型 metadata.xml 的 SRSOrigin 自动识别带号与中央子午线。"""
+        model = self.model_edit.text().strip()
+        if not model:
+            _quiet_warn(self, "提示", "请先选择模型目录")
+            return
+        try:
+            from app.osgb.osgb_job import find_model_root
+            from app.osgb.srs import load_metadata
+            from app.core.projection import detect_gauss_zone
+            root = find_model_root(model)
+            srs = load_metadata(root / "metadata.xml")
+        except Exception as e:  # noqa: BLE001
+            _quiet_warn(self, "读取失败", f"{type(e).__name__}: {e}")
+            return
+        # OSGB 轴序：第一分量=东，第二分量=北
+        e_abs = float(srs.origin[0])
+        z = detect_gauss_zone(e_abs)
+        self._detected_zone = z
+        # L0 优先级：① 参数自带 projection_src.l0 ② 带号公式 ③ 留空让用户填
+        l0_par = None
+        nm = self.param_combo.currentData()
+        if nm:
+            try:
+                d = ParamLibrary(PARAMS_DIR).load(nm)
+                ps = d.get("projection_src") or {}
+                if ps.get("l0") is not None:
+                    l0_par = float(ps["l0"])
+            except Exception:  # noqa: BLE001
+                pass
+        if z:
+            self.chk_use_proj.setChecked(True)
+            self.chk_zone.setChecked(True)
+            self.zone_spin.setValue(int(z["zone"]))
+            l0_use = l0_par if l0_par is not None else float(z["l0"])
+            self.l0_spin.setValue(l0_use)
+            src = "参数 projection_src" if l0_par is not None else "%s公式" % z["band"]
+            self.proj_detected.setText(
+                "SRS %s｜东坐标 %.3f 判定**含带号**：%s带号%d，L0=%.8g°（来自%s），"
+                "剥离后东=%.3f"
+                % (srs.srs, e_abs, z["band"], z["zone"], l0_use, src, z["y_stripped"]))
+        else:
+            self.chk_zone.setChecked(False)
+            self.zone_spin.setValue(0)
+            if l0_par is not None:
+                self.l0_spin.setValue(l0_par)
+                self.proj_detected.setText(
+                    "SRS %s｜东坐标 %.3f 不含带号（按 500km 假东判定）；"
+                    "L0=%.8g° 取自参数 projection_src" % (srs.srs, e_abs, l0_par))
+            else:
+                self.proj_detected.setText(
+                    "SRS %s｜东坐标 %.3f 不含带号（按 500km 假东判定）；"
+                    "参数未提供源侧投影，**请手动填中央子午线 L0**"
+                    % (srs.srs, e_abs))
+        self._on_zone_toggled()
+
+    def _on_zone_toggled(self):
+        # 只做联动使能，不改按钮状态；提示由调用方在需要时刷新，
+        # 避免 setChecked() 触发的信号回调里重入 _update_param_hint。
+        on = self.chk_use_proj.isChecked()
+        self.zone_spin.setEnabled(on and self.chk_zone.isChecked())
+        self.l0_spin.setEnabled(on)
+        self.y0_spin.setEnabled(on)
+        self.btn_proj_auto.setEnabled(True)
+
+    def _on_proj_toggled(self):
+        """启用/停用源侧投影参数 → 联动使能并刷新提示。"""
+        self._on_zone_toggled()
+        self._update_param_hint()
+
+    def proj_override(self) -> dict | None:
+        """界面上的源侧投影参数 → 合并进参数文档 projection_src 的覆盖字典。
+
+        以「启用源侧投影参数」勾选为准，**不用数值当哨兵**
+        （L0=0 是格林尼治附近的合法值，不能拿它表示"未填"）。
+        """
+        if not self.chk_use_proj.isChecked():
+            return None
+        l0 = float(self.l0_spin.value())
+        zone = int(self.zone_spin.value()) if self.chk_zone.isChecked() else None
+        return {"l0": l0,
+                "zone": zone,
+                "y0": float(self.y0_spin.value()),
+                "x0": 0.0,
+                "h0": 0.0,
+                "rigorous": False,
+                "b0": 25.9}
+
+    def current_mode(self) -> str:
+        """勾选框 → 模式键（"xyz" / "xy" / "z"）。两个都不勾选时拒绝。"""
+        dp, dh = self.chk_plane.isChecked(), self.chk_height.isChecked()
+        if dp and dh:
+            return "xyz"
+        if dp:
+            return "xy"
+        if dh:
+            return "z"
+        raise ValueError("请至少勾选一项转换内容（平面 / 高程）")
+
+    # ---------- 辅助 ----------
+
+    def _find_binary(self) -> str:
+        """定位 osgxform：用户指定 > 项目内 native/ > /tmp/。"""
+        given = self.bin_edit.text().strip()
+        if given:
+            return given
+        local = _ROOT / "app" / "osgb" / "native" / "osgxform"
+        if local.exists():
+            return str(local)
+        return "/tmp/osgxform"
+
+    def pick_model(self):
+        d = QFileDialog.getExistingDirectory(self, "选择 OSGB 模型根目录（含 metadata.xml）")
+        if d:
+            self.model_edit.setText(d)
+            if not self.out_edit.text().strip():
+                self.out_edit.setText(str(Path(d).parent / (Path(d).name + "_转换结果")))
+            self.do_detect_proj()
+            self.do_check()
+
+    def pick_out(self):
+        d = QFileDialog.getExistingDirectory(self, "选择输出目录")
+        if d:
+            self.out_edit.setText(d)
+
+    def reload_params(self):
+        self.param_combo.clear()
+        try:
+            for p in ParamLibrary(PARAMS_DIR).list():
+                self.param_combo.addItem(p["name"], p["name"])
+        except Exception as e:  # noqa: BLE001
+            self.param_hint.setText(f"读取参数库失败：{e}")
+            return
+        if self.param_combo.count() == 0:
+            self.param_hint.setText("参数库为空，请先在「参数库」页保存转换参数。")
+        else:
+            self.param_combo.currentIndexChanged.connect(self._on_param_changed)
+            self._on_param_changed()
+
+    def _on_param_changed(self):
+        self._update_param_hint()
+
+    def _update_param_hint(self):
+        """报告参数含哪些部分 + 与 OSGB 顶点空间的匹配情况，并决定能否执行。"""
+        name = self.param_combo.currentData()
+        if not name:
+            self.param_hint.setText("参数库为空，请先在「控制点转换」页计算并保存参数。")
+            self.btn_run.setEnabled(False)
+            return
+        try:
+            doc = ParamLibrary(PARAMS_DIR).load(name)
+        except Exception as e:  # noqa: BLE001
+            self.param_hint.setText(f"加载失败：{e}")
+            self.btn_run.setEnabled(False)
+            return
+        kind = doc.get("kind", "?")
+        sk = doc.get("source_kind", "?")
+        tk = doc.get("target_kind", "?")
+        # pages.py:4390 —— 与全项目同口径的"源为大地坐标"判定
+        src_lonlat = (sk == "lonlat") or kind in ("seven", "three", "chain74")
+
+        parts = []
+        if doc.get("planar4") or doc.get("planar3") or kind in ("planar4", "planar3",
+                                                                "seven2d", "poly2d", "poly3d"):
+            parts.append("平面")
+        if doc.get("heightfit"):
+            parts.append("高程拟合(%s)" % doc["heightfit"].get("value_type", "xi"))
+        if doc.get("geoid_grid"):
+            parts.append("大地水准面格网「%s」" % doc["geoid_grid"])
+        if (doc.get("height_flags") or {}).get("poly"):
+            parts.append("多项式高程")
+        if not parts:
+            parts.append("（无明显平面/高程分量）")
+
+        # 源侧投影可用性：界面覆盖 > 参数自带
+        has_proj = bool(self.proj_override()) or \
+            bool((doc.get("projection_src") or {}).get("l0"))
+        msg = "类型 %s｜源 %s → 目标 %s｜含：%s" % (kind, sk, tk, "、".join(parts))
+        ok = True
+        if src_lonlat:
+            if has_proj:
+                msg += ("\n源为大地坐标：先把 OSGB 平面顶点按源侧投影反算为经纬度，"
+                        "再走参数的 %s 链（经纬度 → 目标平面）。平面与高程可独立勾选。" % kind)
+            else:
+                ok = False
+                msg += ("\n⚠ 源为大地坐标（%s），需要把平面顶点反算为经纬度，"
+                        "但缺源侧投影——请在下方「投影参数」填中央子午线 L0"
+                        "（模型东坐标含带号时勾选带号）。" % kind)
+        if doc.get("geoid_grid") and not has_proj:
+            ok = False
+            msg += ("\n⚠ 含大地水准面格网：ξ 需要源侧经纬度，必须提供源侧投影 L0。")
+        if (doc.get("heightfit") or {}).get("space") == "lonlat" and not has_proj:
+            msg += "\n提示：高程拟合在经纬度空间，缺 L0 时该部分会被跳过。"
+        self.param_hint.setText(msg)
+        self.btn_run.setEnabled(ok)
+
+    def _log(self, msg: str):
+        self.log_view.append(msg)
+
+    # ---------- 检查 ----------
+
+    def do_check(self):
+        model = self.model_edit.text().strip()
+        if not model:
+            _quiet_warn(self, "提示", "请先选择模型目录")
+            return
+        try:
+            from app.osgb.osgb_job import find_model_root, iter_tile_files
+            from app.osgb import flash as _f
+            from app.osgb.srs import load_metadata
+            root = find_model_root(model)
+            srs = load_metadata(root / "metadata.xml")
+            tiles = iter_tile_files(root)
+            size_mb = sum(t.stat().st_size for t in tiles) / 1048576
+            lines = [f"模型根：{root}",
+                     f"瓦片：{len(tiles)} 个，共 {size_mb:.1f} MB",
+                     f"SRS：{srs.describe()}",
+                     f"原点：({srs.origin[0]:.4f}, {srs.origin[1]:.4f}, {srs.origin[2]:.4f})"]
+            name = self.param_combo.currentData()
+            if name:
+                doc = ParamLibrary(PARAMS_DIR).load(name)
+                mode = self.current_mode()
+                A, b, new = _f.coeffs_for_document(doc, srs, mode=mode)
+                lines.append("")
+                lines.append(f"仿射系数（{mode} 模式）：")
+                for i in range(3):
+                    lines.append("  A[%d] = [%s]" % (i, ", ".join("%.9f" % A[i][j] for j in range(3))))
+                lines.append("  b    = [%s]" % ", ".join("%.4f" % v for v in b))
+                lines.append("")
+                lines.append("X 位移 %.3f m，Y 位移 %.3f m，Z 位移 %.3f m" % (b[0], b[1], b[2]))
+                shift = math.hypot(b[0], b[1])
+                if shift > 50000:
+                    lines.append("⚠ 平面位移超过 50 km——请确认参数与模型是同一坐标系，"
+                                 "选错参数会静默产生巨大偏移")
+            txt = "\n".join(lines)
+            self.info_label.setText(txt)
+            self.status_label.setText("检查完成（未写任何文件）")
+        except Exception as e:  # noqa: BLE001
+            self.info_label.setText("")
+            _quiet_warn(self, "检查失败", f"{type(e).__name__}: {e}")
+
+    # ---------- 执行 ----------
+
+    def do_run(self):
+        model = self.model_edit.text().strip()
+        out = self.out_edit.text().strip()
+        name = self.param_combo.currentData()
+        if not model or not name:
+            _quiet_warn(self, "提示", "请先选择模型目录与转换参数")
+            return
+        if not out:
+            out = str(Path(model).parent / (Path(model).name + "_转换结果"))
+            self.out_edit.setText(out)
+        try:
+            if Path(out).resolve() == Path(model).resolve():
+                _quiet_warn(self, "拒绝执行", "输出目录不能与模型目录相同——本项目禁止覆盖输入。")
+                return
+        except OSError:
+            pass
+        try:
+            doc = ParamLibrary(PARAMS_DIR).load(name)
+        except Exception as e:  # noqa: BLE001
+            _quiet_warn(self, "参数加载失败", str(e))
+            return
+        if doc.get("source_kind") != "planar":
+            _quiet_warn(self, "参数不适用",
+                        f"该参数的源坐标系是 {doc.get('source_kind')}，不是平面坐标。\n"
+                        "OSGB 顶点是相对 SRSOrigin 的平面偏移量，只能用平面源参数转换。")
+            return
+
+        # 二次确认（不可逆的批量写盘）
+        ans = QMessageBox.question(
+            self, "确认转换",
+            f"模型：{model}\n输出：{out}\n参数：{name}\n"
+            f"转换内容：{self._mode_label()}\n\n"
+            f"将写入 {self.threads_spin.value()} 线程转换后的完整模型。是否继续？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if ans != QMessageBox.Yes:
+            return
+        self._start(model, out, doc)
+
+    def _start(self, model, out, doc):
+        from app.osgb.osgb_worker import OsgbConvertWorker
+        self.btn_run.setEnabled(False)
+        self.btn_cancel.setEnabled(True)
+        self.btn_preview.setEnabled(False)
+        self.bar.setVisible(True)
+        self.log_view.clear()
+        self._log(f"模型：{model}")
+        self._log(f"输出：{out}")
+        self._log(f"参数：{self.param_combo.currentText()}｜转换内容：{self._mode_label()}")
+        self._log(f"转换器：{self._find_binary()}")
+        self.status_label.setText("正在扫描并转换…")
+        self._worker = OsgbConvertWorker(
+            model, out, doc,
+            mode=self.current_mode(),
+            binary=self._find_binary(),
+            options=self.compress_combo.currentData(),
+            threads=self.threads_spin.value(),
+            keep_origin=True,
+            proj_override=self.proj_override())
+        self._worker.tick.connect(self._log)
+        self._worker.finished_ok.connect(self._on_done)
+        self._worker.failed.connect(self._on_fail)
+        self._worker.start()
+
+    def do_cancel(self):
+        if self._worker is not None:
+            self._worker.cancel()
+            self.status_label.setText("正在取消…")
+
+    def _reset_buttons(self):
+        self.btn_run.setEnabled(True)
+        self.btn_cancel.setEnabled(False)
+        self.btn_preview.setEnabled(True)
+        self.bar.setVisible(False)
+
+    def _on_done(self, res):
+        self._reset_buttons()
+        self._result = res
+        self._log("")
+        self._log(res.summary())
+        if res.raw:
+            self._log(res.raw.strip()[:1500])
+        self.status_label.setText("完成：" + res.summary())
+        _oplog().log("osgb_convert", {
+            "model": self.model_edit.text().strip(),
+            "out": self.out_edit.text().strip(),
+            "param": self.param_combo.currentText(),
+            "mode": self.current_mode(),
+            "ok": res.ok, "failed": res.failed, "vertices": res.vertices,
+            "seconds": round(res.seconds, 2)})
+        _quiet_info(self, "转换完成", res.summary())
+
+    def _on_fail(self, msg):
+        self._reset_buttons()
+        self.status_label.setText("失败：" + msg)
+        self._log("失败：" + msg)
+        _quiet_warn(self, "转换失败", msg)
+
+
+
+class LasPage(QWidget):
+    """点云模型转换页（LAS）。
+
+    契约（与 OSGB 页一致）：
+      · 只改 X/Y/Z 坐标，**非坐标数据一律不动**（强度/回波/分类/GPS 时间/RGB 等）
+      · scale/offset 保持源文件的值（它们决定量化精度，不属于坐标转换）
+      · 平面与高程独立勾选；换算委托 app.logic.apply_params
+      · 轴序：LAS 惯例 X=东、Y=北；本项目测量约定 x=北、y=东
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._worker = None
+        self._files: list = []
+        v = QVBoxLayout(self)
+        v.addWidget(_title(
+            "点云模型坐标转换（LAS）",
+            "对 LAS/LAZ 点云逐点转换 X/Y/Z 坐标。**只动坐标，其余属性（强度、回波、分类、"
+            "GPS 时间、RGB、扫描角、点源 ID）与头部元数据（点格式、scale/offset、VLR/CRS）"
+            "一律原样保留**。\n"
+            "平面与高程可独立勾选；轴序 LAS 为 (东,北)、本软件为 (北,东)，已自动换算。"
+            "LAS 的 scale 是量化步长（常见 0.0001 m），保持不变。"))
+
+        # 1. 数据与输出
+        g1 = QGroupBox("1. 点云目录与输出")
+        gv1 = QGridLayout(g1)
+        self.src_edit = QLineEdit()
+        self.src_edit.setPlaceholderText("含 .las/.laz 的目录（可递归）")
+        self.btn_src = QPushButton("浏览…")
+        self.btn_src.clicked.connect(self.pick_src)
+        self.dst_edit = QLineEdit()
+        self.dst_edit.setPlaceholderText("留空则自动取 <源目录>_转换结果")
+        self.btn_dst = QPushButton("浏览…")
+        self.btn_dst.clicked.connect(self.pick_dst)
+        self.chk_recursive = QCheckBox("递归子目录")
+        self.chk_recursive.setChecked(True)
+        gv1.addWidget(QLabel("点云目录"), 0, 0)
+        gv1.addWidget(self.src_edit, 0, 1)
+        gv1.addWidget(self.btn_src, 0, 2)
+        gv1.addWidget(QLabel("输出目录"), 1, 0)
+        gv1.addWidget(self.dst_edit, 1, 1)
+        gv1.addWidget(self.btn_dst, 1, 2)
+        gv1.addWidget(self.chk_recursive, 2, 1)
+        self.info_label = QLabel("未扫描")
+        self.info_label.setObjectName("muted")
+        self.info_label.setWordWrap(True)
+        gv1.addWidget(self.info_label, 3, 0, 1, 3)
+        v.addWidget(g1)
+
+        # 2. 参数与转换内容
+        g2 = QGroupBox("2. 转换参数与内容")
+        gv2 = QGridLayout(g2)
+        self.param_combo = QComboBox()
+        self.btn_reload = QPushButton("刷新")
+        self.btn_reload.clicked.connect(self.reload_params)
+        self.chk_plane = QCheckBox("平面转换（x=北, y=东）")
+        self.chk_plane.setChecked(True)
+        self.chk_height = QCheckBox("高程转换（Z）")
+        self.chk_height.setChecked(True)
+        gv2.addWidget(QLabel("参数"), 0, 0)
+        gv2.addWidget(self.param_combo, 0, 1, 1, 2)
+        gv2.addWidget(self.btn_reload, 0, 3)
+        gv2.addWidget(QLabel("转换内容"), 1, 0)
+        ch_box = QHBoxLayout()
+        ch_box.addWidget(self.chk_plane)
+        ch_box.addWidget(self.chk_height)
+        ch_box.addStretch(1)
+        gv2.addLayout(ch_box, 1, 1, 1, 3)
+        self.param_hint = QLabel("")
+        self.param_hint.setObjectName("muted")
+        self.param_hint.setWordWrap(True)
+        gv2.addWidget(self.param_hint, 2, 0, 1, 4)
+        v.addWidget(g2)
+
+        # 3. 源侧投影（大地源参数 / 带号剥离需要）
+        g3 = QGroupBox("3. 源侧投影参数（参数源为大地坐标、或平面坐标含带号时必填）")
+        gv3 = QGridLayout(g3)
+        self.chk_use_proj = QCheckBox("启用源侧投影参数")
+        self.zone_spin = QSpinBox()
+        self.zone_spin.setRange(0, 60)
+        self.l0_spin = QDoubleSpinBox()
+        self.l0_spin.setRange(-180.0, 180.0)
+        self.l0_spin.setDecimals(8)
+        self.l0_spin.setSuffix(" °")
+        self.y0_spin = QDoubleSpinBox()
+        self.y0_spin.setRange(-1e7, 1e7)
+        self.y0_spin.setDecimals(3)
+        self.y0_spin.setValue(500000.0)
+        self.chk_zone = QCheckBox("X（东）含带号")
+        self.btn_proj_auto = QPushButton("从 LAS 头自动识别")
+        self.btn_proj_auto.clicked.connect(self.do_detect_proj)
+        gv3.addWidget(self.btn_proj_auto, 0, 0)
+        gv3.addWidget(self.chk_use_proj, 0, 1, 1, 2)
+        gv3.addWidget(QLabel("带号"), 1, 0)
+        gv3.addWidget(self.zone_spin, 1, 1)
+        gv3.addWidget(self.chk_zone, 1, 2)
+        gv3.addWidget(QLabel("中央子午线 L0"), 2, 0)
+        gv3.addWidget(self.l0_spin, 2, 1)
+        gv3.addWidget(QLabel("假东 y0"), 2, 2)
+        gv3.addWidget(self.y0_spin, 2, 3)
+        self.proj_detected = QLabel("未识别")
+        self.proj_detected.setObjectName("muted")
+        self.proj_detected.setWordWrap(True)
+        gv3.addWidget(self.proj_detected, 3, 0, 1, 4)
+        v.addWidget(g3)
+
+        # 4. 执行
+        g4 = QGroupBox("4. 执行")
+        gv4 = QVBoxLayout(g4)
+        r4 = QHBoxLayout()
+        self.btn_scan = QPushButton("扫描")
+        self.btn_scan.clicked.connect(self.do_scan)
+        self.btn_run = QPushButton("开始转换")
+        self.btn_run.clicked.connect(self.do_run)
+        self.btn_cancel = QPushButton("取消")
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.clicked.connect(self.do_cancel)
+        r4.addWidget(self.btn_scan)
+        r4.addWidget(self.btn_run)
+        r4.addWidget(self.btn_cancel)
+        r4.addStretch(1)
+        gv4.addLayout(r4)
+        self.bar = QProgressBar()
+        gv4.addWidget(self.bar)
+        self.status_label = QLabel("就绪")
+        self.status_label.setObjectName("muted")
+        self.status_label.setWordWrap(True)
+        gv4.addWidget(self.status_label)
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMaximumHeight(170)
+        gv4.addWidget(self.log_view)
+        v.addWidget(g4)
+        v.addStretch(1)
+
+        self.chk_use_proj.toggled.connect(self._on_proj_toggled)
+        self.chk_zone.toggled.connect(self._on_proj_toggled)
+        self.chk_plane.toggled.connect(self._update_param_hint)
+        self.chk_height.toggled.connect(self._update_param_hint)
+        self.reload_params()
+
+    # ---------- 辅助 ----------
+
+    def current_mode(self) -> str:
+        """勾选框 → 模式键（xyz / xy / z）。"""
+        dp, dh = self.chk_plane.isChecked(), self.chk_height.isChecked()
+        if dp and dh:
+            return "xyz"
+        if dp:
+            return "xy"
+        if dh:
+            return "z"
+        raise ValueError("请至少勾选一项转换内容（平面 / 高程）")
+
+    def _mode_label(self) -> str:
+        try:
+            m = self.current_mode()
+        except ValueError:
+            return "（未选择）"
+        return {"xyz": "平面 + 高程", "xy": "仅平面", "z": "仅高程"}[m]
+
+    def pick_src(self):
+        d = QFileDialog.getExistingDirectory(self, "选择点云目录")
+        if d:
+            self.src_edit.setText(d)
+            if not self.dst_edit.text().strip():
+                self.dst_edit.setText(str(Path(d).parent / (Path(d).name + "_转换结果")))
+            self.do_scan()
+            self.do_detect_proj()
+
+    def pick_dst(self):
+        d = QFileDialog.getExistingDirectory(self, "选择输出目录")
+        if d:
+            self.dst_edit.setText(d)
+
+    def reload_params(self):
+        self.param_combo.clear()
+        try:
+            for p in ParamLibrary(PARAMS_DIR).list():
+                self.param_combo.addItem(p["name"], p["name"])
+        except Exception as e:  # noqa: BLE001
+            self.param_hint.setText("读取参数库失败：%s" % e)
+            return
+        try:
+            self.param_combo.currentIndexChanged.disconnect()
+        except Exception:  # noqa: BLE001
+            pass
+        self.param_combo.currentIndexChanged.connect(self._update_param_hint)
+        self._update_param_hint()
+
+    def _update_param_hint(self):
+        from app.pointcloud.las_io import has_laspy
+        if not has_laspy():
+            self.param_hint.setText(
+                "缺少 laspy，无法读写 LAS。请安装：pip install laspy")
+            self.btn_run.setEnabled(False)
+            return
+        name = self.param_combo.currentData()
+        if not name:
+            self.param_hint.setText("参数库为空，请先在「控制点转换」页计算并保存参数。")
+            self.btn_run.setEnabled(False)
+            return
+        try:
+            doc = ParamLibrary(PARAMS_DIR).load(name)
+        except Exception as e:  # noqa: BLE001
+            self.param_hint.setText("加载失败：%s" % e)
+            self.btn_run.setEnabled(False)
+            return
+        kind = doc.get("kind", "?")
+        sk = doc.get("source_kind", "?")
+        tk = doc.get("target_kind", "?")
+        src_lonlat = (sk == "lonlat") or kind in ("seven", "three", "chain74")
+        parts = []
+        if doc.get("planar4") or doc.get("planar3") or kind in (
+                "planar4", "planar3", "seven2d", "poly2d", "poly3d"):
+            parts.append("平面")
+        if doc.get("heightfit"):
+            parts.append("高程拟合(%s)" % doc["heightfit"].get("value_type", "xi"))
+        if doc.get("geoid_grid"):
+            parts.append("大地水准面格网「%s」" % doc["geoid_grid"])
+        if not parts:
+            parts.append("（无明显平面/高程分量）")
+        has_proj = bool(self.proj_override()) or bool(
+            (doc.get("projection_src") or {}).get("l0"))
+        msg = "类型 %s | 源 %s → 目标 %s | 含：%s" % (kind, sk, tk, "、".join(parts))
+        ok = True
+        if src_lonlat and not has_proj:
+            ok = False
+            msg += ("\n⚠ 源为大地坐标（%s），需要把点云平面坐标反算为经纬度，"
+                    "但缺源侧投影——请勾选「启用源侧投影参数」并填中央子午线 L0。" % kind)
+        if doc.get("geoid_grid") and not has_proj:
+            ok = False
+            msg += "\n⚠ 含大地水准面格网：ξ 需要源侧经纬度，必须提供源侧投影 L0。"
+        self.param_hint.setText(msg)
+        self.btn_run.setEnabled(ok)
+
+    def _on_proj_toggled(self):
+        on = self.chk_use_proj.isChecked()
+        self.zone_spin.setEnabled(on)
+        self.chk_zone.setEnabled(on)
+        self.l0_spin.setEnabled(on)
+        self.y0_spin.setEnabled(on)
+        self._update_param_hint()
+
+    def proj_override(self) -> dict | None:
+        if not self.chk_use_proj.isChecked():
+            return None
+        zone = int(self.zone_spin.value()) if self.chk_zone.isChecked() else None
+        return {"l0": float(self.l0_spin.value()), "zone": zone,
+                "y0": float(self.y0_spin.value()), "x0": 0.0, "h0": 0.0,
+                "rigorous": False, "b0": 25.9}
+
+    def _log(self, msg: str):
+        self.log_view.append(msg)
+
+    # ---------- 扫描 / 识别 ----------
+
+    def do_scan(self):
+        src = self.src_edit.text().strip()
+        if not src:
+            _quiet_warn(self, "提示", "请先选择点云目录")
+            return
+        try:
+            from app.pointcloud import las_job
+            self._files = las_job.find_las_files(src, recursive=self.chk_recursive.isChecked())
+        except Exception as e:  # noqa: BLE001
+            _quiet_warn(self, "扫描失败", "%s: %s" % (type(e).__name__, e))
+            return
+        if not self._files:
+            self.info_label.setText("未找到 .las/.laz 文件")
+            return
+        total = sum(f.stat().st_size for f in self._files)
+        lines = ["共 %d 个文件，%.2f GB" % (len(self._files), total / 1073741824.0)]
+        try:
+            from app.pointcloud import las_io
+            info = las_io.read_info(self._files[0])
+            lines.append("")
+            lines.append("首个文件头信息：")
+            lines.append(info.describe())
+        except Exception as e:  # noqa: BLE001
+            lines.append("读取头信息失败：%s" % e)
+        self.info_label.setText("\n".join(lines))
+        self.status_label.setText("扫描完成：%d 个文件" % len(self._files))
+
+    def do_detect_proj(self):
+        """从 LAS 头读 CRS 与坐标量级，推测带号与中央子午线。"""
+        src = self.src_edit.text().strip()
+        if not src:
+            _quiet_warn(self, "提示", "请先选择点云目录")
+            return
+        try:
+            from app.pointcloud import las_job, las_io
+            from app.core.projection import detect_gauss_zone
+            files = self._files or las_job.find_las_files(
+                src, recursive=self.chk_recursive.isChecked())
+            if not files:
+                _quiet_warn(self, "提示", "未找到 LAS 文件")
+                return
+            info = las_io.read_info(files[0])
+        except Exception as e:  # noqa: BLE001
+            _quiet_warn(self, "读取失败", "%s: %s" % (type(e).__name__, e))
+            return
+        x_lo, x_hi = float(info.mins[0]), float(info.maxs[0])
+        z = detect_gauss_zone(x_hi)
+        self.chk_use_proj.setChecked(True)
+        if z:
+            self.chk_zone.setChecked(True)
+            self.zone_spin.setValue(int(z["zone"]))
+            self.l0_spin.setValue(float(z["l0"]))
+            self.proj_detected.setText(
+                "X（东）最大值 %.3f 判定为含带号：%s带号%d，L0 自动锁定 %.8g°"
+                % (x_hi, z["band"], z["zone"], z["l0"]))
+        else:
+            self.chk_zone.setChecked(False)
+            # LAS 头的 CRS(WKT) 里通常直接带 central_meridian，优先采用
+            l0_crs = self._l0_from_crs(info.crs_wkt)
+            if l0_crs is not None:
+                self.l0_spin.setValue(l0_crs)
+                self.proj_detected.setText(
+                    "X（东）范围 %.3f~%.3f 不含带号；CRS 中央子午线 = %.8g°，已自动填入"
+                    % (x_lo, x_hi, l0_crs))
+            else:
+                self.proj_detected.setText(
+                    "X（东）范围 %.3f~%.3f 不含带号；CRS %s。请按模型的中央子午线填 L0"
+                    % (x_lo, x_hi, "已定义但未含中央子午线" if info.crs_wkt
+                       else "未定义"))
+        self._on_proj_toggled()
+
+    @staticmethod
+    def _l0_from_crs(wkt: str):
+        """从 LAS 头的 CRS WKT 里取 central_meridian（度）。取不到返回 None。
+
+        只做"读元数据"，不推测：LAS 的 WKT 是数据自带的权威信息。
+        """
+        if not wkt:
+            return None
+        # 正规做法：交给 pyproj（公开库）解析，WKT1/WKT2/PROJ 串都认。
+        # 曾经用正则匹配 PARAMETER["central_meridian",...]，只对 WKT1 有效，
+        # 而这批 LAS 存的是 WKT2（CONVERSION[...PARAMETER["Central meridian",...]]）。
+        try:
+            from pyproj import CRS
+            c = CRS.from_wkt(wkt)
+            d = c.to_dict()
+            # pyproj 的键是 lon_0（Proj 口径），不是 WKT 里的 central_meridian
+            for key in ("lon_0", "central_meridian"):
+                v = d.get(key)
+                if v is not None:
+                    return float(v)
+        except Exception:  # noqa: BLE001
+            pass
+        # 退回文本扫描（覆盖 WKT1/WKT2 两种参数写法）
+        try:
+            import re
+            m = re.search(r'"central[_ ]meridian"\s*,\s*'
+                          r'(-?[0-9.]+(?:[eE][-+]?\d+)?)', wkt, re.I)
+            return float(m.group(1)) if m else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    # ---------- 执行 ----------
+
+    def do_run(self):
+        src = self.src_edit.text().strip()
+        dst = self.dst_edit.text().strip()
+        name = self.param_combo.currentData()
+        if not src or not name:
+            _quiet_warn(self, "提示", "请先选择点云目录与转换参数")
+            return
+        if not dst:
+            dst = str(Path(src).parent / (Path(src).name + "_转换结果"))
+            self.dst_edit.setText(dst)
+        try:
+            if Path(dst).resolve() == Path(src).resolve():
+                _quiet_warn(self, "拒绝执行",
+                            "输出目录不能与输入目录相同——本项目禁止覆盖源数据。")
+                return
+        except OSError:
+            pass
+        try:
+            mode = self.current_mode()
+        except ValueError as e:
+            _quiet_warn(self, "提示", str(e))
+            return
+        try:
+            doc = ParamLibrary(PARAMS_DIR).load(name)
+        except Exception as e:  # noqa: BLE001
+            _quiet_warn(self, "参数加载失败", str(e))
+            return
+        ans = QMessageBox.question(
+            self, "确认转换",
+            "点云目录：%s\n输出目录：%s\n参数：%s\n转换内容：%s\n\n"
+            "只改 X/Y/Z 坐标，其余属性与头部元数据原样保留。是否继续？"
+            % (src, dst, name, self._mode_label()),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if ans != QMessageBox.Yes:
+            return
+        self._start(src, dst, doc, mode)
+
+    def _start(self, src, dst, doc, mode):
+        from app.pointcloud.las_worker import LasConvertWorker
+        self.btn_run.setEnabled(False)
+        self.btn_cancel.setEnabled(True)
+        self.btn_scan.setEnabled(False)
+        self.bar.setRange(0, 100)
+        self.bar.setValue(0)
+        self.log_view.clear()
+        self._log("点云目录：%s" % src)
+        self._log("输出目录：%s" % dst)
+        self._log("参数：%s | 转换内容：%s" % (self.param_combo.currentText(),
+                                            self._mode_label()))
+        self._worker = LasConvertWorker(
+            src, dst, doc, mode=mode, proj_override=self.proj_override())
+        self._worker.file_progress.connect(self._on_file)
+        self._worker.finished_ok.connect(self._on_done)
+        self._worker.failed.connect(self._on_fail)
+        self._worker.start()
+
+    def _on_file(self, idx, total, name):
+        self.bar.setValue(int(100.0 * idx / max(1, total)))
+        self.status_label.setText("(%d/%d) %s" % (idx + 1, total, name))
+
+    def do_cancel(self):
+        if self._worker is not None:
+            self._worker.cancel()
+            self.status_label.setText("正在取消…")
+
+    def _reset_buttons(self):
+        self.btn_run.setEnabled(True)
+        self.btn_cancel.setEnabled(False)
+        self.btn_scan.setEnabled(True)
+        self.bar.setValue(100)
+
+    def _on_done(self, res):
+        self._reset_buttons()
+        self._log("")
+        self._log(res.summary())
+        for f in res.files:
+            if not f.ok:
+                self._log("  失败 %s: %s" % (Path(f.src).name, f.reason))
+        self.status_label.setText("完成：" + res.summary())
+        _oplog().log("las_convert", {
+            "src": self.src_edit.text().strip(),
+            "dst": self.dst_edit.text().strip(),
+            "param": self.param_combo.currentText(),
+            "mode": self.current_mode(),
+            "files_ok": res.ok_count, "files_fail": res.fail_count,
+            "points": res.point_total, "seconds": round(res.seconds, 2)})
+        _quiet_info(self, "转换完成", res.summary())
+
+    def _on_fail(self, msg):
+        self._reset_buttons()
+        self.status_label.setText("失败：" + msg)
+        self._log("失败：" + msg)
+        _quiet_warn(self, "转换失败", msg)
+
+
+
 class PolyPage(QWidget):
     """复杂坐标系转换（二维/三维多项式模型）。
 
@@ -3023,7 +4059,7 @@ class LedgerPage(QWidget):
 class HelpPage(QWidget):
     """关于本软件：版本 / 作者 / 许可证 / 技术手册 / 最新版本地址 / BUG 反馈。"""
 
-    VERSION = "1.0"
+    VERSION = "1.1"
     AUTHOR = "求道之心"
     LICENSE = "MIT License"
     REPO_URL = "https://github.com/XEMPZ/GeoRefine"
@@ -3088,7 +4124,7 @@ class HelpPage(QWidget):
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(
                 "# GeoRefine 技术手册（占位）\n\n"
-                "版本 V1.0 · 作者 求道之心 · 本手册为占位版本，内容持续完善中。\n\n"
+                "版本 V1.1 · 作者 求道之心 · 本手册为占位版本，内容持续完善中。\n\n"
                 "## 坐标约定\n\n"
                 "- 平面坐标 x=北坐标、y=东坐标（含 500km 假东偏移）\n"
                 "- 大地坐标 B 纬度、L 经度；高程异常 ξ = H − h，正常高 = 大地高 − ξ\n"

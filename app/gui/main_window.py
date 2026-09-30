@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QMainWi
 
 from app import APP_TITLE
 from app.gui.pages import (AccuracyPage, ApplyPage, CadPage, ControlPointPage, GaussPage, HelpPage,
+                           OsgbPage, LasPage,
                            HomePage, LedgerPage, ParamLibraryPage, PhotoPosPage, PolyPage, SpacePage,
                            _ROOT)
 from app.gui.styles import ACCENT, BG, INK, MUTED, apply_qss
 
 NAV = ["首页", "高斯投影换带", "空间坐标转换", "参数应用转换", "控制点转换", "照片POS处理",
-       "多项式转换", "文件转换", "精度对比", "参数库", "处理台账", "关于本软件"]
+       "OSGB模型转换", "点云模型转换", "多项式转换", "文件转换", "精度对比", "参数库",
+       "处理台账", "关于本软件"]
 
 
 class MainWindow(QMainWindow):
@@ -55,7 +57,7 @@ class MainWindow(QMainWindow):
         self.nav.setFrameShape(QListWidget.NoFrame)
         self.nav.setCurrentRow(0)
         nv.addWidget(self.nav, 1)
-        ver = QLabel("v1.0")
+        ver = QLabel("v1.1")
         ver.setStyleSheet(f"color:{MUTED}; background:transparent; font-size:8pt;")
         nv.addWidget(ver)
         h.addWidget(nav_panel)
@@ -63,8 +65,9 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.pages = {
             0: HomePage(), 1: GaussPage(), 2: SpacePage(), 3: ApplyPage(),
-            4: ControlPointPage(), 5: PhotoPosPage(), 6: PolyPage(), 7: CadPage(),
-            8: AccuracyPage(), 9: ParamLibraryPage(), 10: LedgerPage(), 11: HelpPage(),
+            4: ControlPointPage(), 5: PhotoPosPage(), 6: OsgbPage(),
+            7: LasPage(), 8: PolyPage(), 9: CadPage(), 10: AccuracyPage(),
+            11: ParamLibraryPage(), 12: LedgerPage(), 13: HelpPage(),
         }
         # 竖向滑块仅在控制点页内部（该页内容多）；其余页整页完整显示，
         # 滑块只出现在各数据控件（表格/列表）内部

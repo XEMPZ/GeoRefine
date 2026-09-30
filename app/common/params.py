@@ -115,6 +115,9 @@ class ParamApplier:
         self.p3 = param.get("three")
         self.proj = param.get("projection")
         self.hf = param.get("heightfit")
+        # 大地水准面查算用的绝对投影坐标 (gx, gy)；None 表示输入本身即绝对坐标。
+        # OSGB 顶点是局部偏移，驱动层经 apply_planar_at 传入"局部 + SRSOrigin"。
+        self._grid_probe_xy = None
         # 参数完整性校验：声明了某类转换但缺数据 → 明确报错（防 KeyError 与静默错算）
         for key, piece in (("planar4", self.p4), ("planar3", self.p3d),
                            ("seven", self.p7), ("three", self.p3),
@@ -216,14 +219,18 @@ class ParamApplier:
         e = get_ellipsoid(self.param.get(key) or self.param.get("ellipsoid") or "CGCS2000")
         return e or self.ell
 
-    def _poly_src_point(self, v1, v2, h, src_is_lonlat):
+    def _poly_src_point(self, v1, v2, h, src_is_lonlat, psrc=None):
         """模型输入点：平面输入 + 模型空间=lonlat → 按源侧投影反算为大地（度）。
 
         含带号 y 在参数 projection_src.zone 里记录，此处剥除。
+
+        psrc：可选的源侧投影覆盖（界面填写的带号/L0/假东）。
+        默认用参数自带的 projection_src。**本方法是"平面→源大地"的唯一实现**，
+        高程链里的格网查算也复用它。
         """
         if src_is_lonlat or self.param.get("source_kind") != "lonlat":
             return float(v1), float(v2), float(h)
-        psrc = self.param.get("projection_src") or {}
+        psrc = psrc if psrc is not None else (self.param.get("projection_src") or {})
         if not psrc.get("l0"):
             raise ValueError("参数需源侧投影参数（中央子午线）才能把平面坐标反算为大地坐标")
         from app.core.projection import inverse_gauss_points
@@ -394,6 +401,32 @@ class ParamApplier:
                     h2 = h2 - v if self.hf.get("value_type", "xi") == "xi" else h2 + v
         return x, y, h2
 
+    def _planar_to_src_bl(self, x, y, h):
+        """平面输入 → 源侧 (b, l) 十进制度；无源侧投影时返回 (None, None)。
+
+        **薄壳**：反算一律走既有的 `_poly_src_point`（本类唯一实现），
+        本方法只负责"缺投影时返回 None 而不抛错"，供高程链按需取用。
+        """
+        psrc = self.param.get("projection_src") or {}
+        if not psrc.get("l0"):
+            return None, None
+        b, l, _ = self._poly_src_point(x, y, h, src_is_lonlat=False, psrc=psrc)
+        return float(b), float(l)
+
+    def apply_planar_at(self, x, y, h, gx, gy, do_plane=True, do_height=True):
+        """同 apply_planar，但大地水准面 ξ 用**绝对坐标** (gx, gy) 反算经纬度查算。
+
+        OSGB 场景专用入口：顶点 (x, y) 是相对 SRSOrigin 的局部偏移（平面参数按此拟合），
+        而格网覆盖全区域，必须用 (局部 + SRSOrigin) 的绝对投影坐标反算 B/L 才能命中。
+        平面部分仍按局部坐标计算，两者互不干扰。
+        """
+        saved = self._grid_probe_xy
+        self._grid_probe_xy = (float(gx), float(gy))
+        try:
+            return self.apply_planar(x, y, h, do_plane=do_plane, do_height=do_height)
+        finally:
+            self._grid_probe_xy = saved
+
     def apply_planar(self, x, y, h, do_plane=True, do_height=True):
         """平面(正常高) → 目标平面(正常高)。二维七参数/四参数 + 高程拟合（value_type=dh）。
 
@@ -407,10 +440,6 @@ class ParamApplier:
             if self.param.get("source_kind") == "lonlat" and not (self.param.get("projection_src") or {}).get("l0"):
                 raise ValueError("该参数的多项式源为大地坐标且未配源侧投影，不能用于平面坐标输入")
             return self._apply_poly(x, y, h, do_plane, do_height, src_is_lonlat=False)
-        if do_height and self.param.get("geoid_grid"):
-            raise ValueError(
-                f"该参数与大地水准面模型「{self.param.get('geoid_grid')}」耦合绑定，"
-                "高程需要源大地坐标（经纬度）插值 ξ；平面坐标输入无法按原口径计算，已停止")
         seven2d = self.kind == "seven2d" and self.p7
         if seven2d:
             # 二维七参数（布尔莎平面退化）：参数在重心化坐标系上解算，应用时先减重心
@@ -431,14 +460,46 @@ class ParamApplier:
         else:
             x2, y2 = self._apply_planar4(x, y) if (do_plane and self.p4) else (x, y)
             h2 = h
-        if do_height and self.hf:
-            space = self.hf.get("space", "planar")
-            if space == "planar":
-                v = self._eval_hf(x2, y2)
-            else:  # lonlat 空间的拟合参数无法用于纯平面输入，跳过
-                v = None
-            if v is not None:
-                h2 = h2 - v if self.hf.get("value_type", "xi") == "xi" else h2 + v
+        if do_height:
+            # 需要源侧经纬度时按需反算一次（大地水准面格网 ξ / lonlat 空间拟合）
+            fl = self.param.get("height_flags") or {}
+            need_bl = bool(self.param.get("geoid_grid")) or (
+                self.hf is not None and self.hf.get("space") == "lonlat")
+            s_b = s_l = None
+            if need_bl:
+                # 格网 ξ 需要**绝对投影坐标**：OSGB 顶点是相对 SRSOrigin 的
+                # 局部偏移，驱动层经 apply_planar_at 传入 (局部 + SRSOrigin)。
+                # 未传时按输入本身即绝对坐标处理（点表/照片 POS 等场景）。
+                gxy = self._grid_probe_xy
+                px, py = gxy if gxy else (x, y)
+                s_b, s_l = self._planar_to_src_bl(px, py, h)
+                if s_b is None and self.param.get("geoid_grid"):
+                    raise ValueError(
+                        "该参数与大地水准面模型「%s」耦合绑定，高程需要源侧经纬度插值 ξ；"
+                        "平面坐标输入必须配源侧投影参数（projection_src.l0）才能反算，已停止。"
+                        % self.param.get("geoid_grid"))
+            gname = self.param.get("geoid_grid")
+            if gname and fl and not fl.get("geoid", True):
+                gname = None          # 参数显式声明不启用格网
+            if gname:
+                grid = self._require_grid(gname)
+                xi = grid.try_undulation(float(s_l), float(s_b))
+                if xi is None:
+                    g = grid.grid
+                    raise ValueError(
+                        "源点 (%.6f, %.6f) 超出格网「%s」覆盖范围"
+                        "（lat %.2f~%.2f, lon %.2f~%.2f）：该参数与此格网耦合绑定，"
+                        "不能外推，已停止"
+                        % (s_b, s_l, gname, g.lat_min, g.lat_max, g.lon_min, g.lon_max))
+                h2 = float(h2) - float(xi)        # 基准高 = 源高 − ξ
+            if self.hf:
+                space = self.hf.get("space", "planar")
+                if space == "lonlat":
+                    v = None if s_b is None else self._eval_hf(s_l, s_b)
+                else:
+                    v = self._eval_hf(x2, y2)
+                if v is not None:
+                    h2 = h2 - v if self.hf.get("value_type", "xi") == "xi" else h2 + v
         return x2, y2, h2
 
     def apply_planar_to_lonlat(self, x, y, h, do_plane=True):
