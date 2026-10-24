@@ -269,3 +269,23 @@ def test_apply_page_dms_normalization(tmp_path):
         assert abs(got - ex[0]) < 1e-3, f"d.ms 归一化失败：{got} vs {ex[0]}"
     finally:
         pm.PARAMS_DIR = old_dir
+
+
+def run() -> int:
+    """供 run_tests.py 调用的统一入口。"""
+    import inspect
+    import shutil
+    fns = [f for n, f in inspect.getmembers(sys.modules[__name__], inspect.isfunction) if n.startswith("test_")]
+    count = 0
+    for fn in fns:
+        sig = inspect.signature(fn)
+        if "tmp_path" in sig.parameters:
+            td = Path(tempfile.mkdtemp(prefix="test_tmp_"))
+            try:
+                fn(td)
+            finally:
+                shutil.rmtree(td, ignore_errors=True)
+        else:
+            fn()
+        count += 1
+    return count

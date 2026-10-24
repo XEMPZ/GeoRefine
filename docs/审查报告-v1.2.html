@@ -20,7 +20,7 @@ blockquote{border-left:4px solid #c96f4a;background:#fdf6f0;margin:12px 0;paddin
 ul li{margin:4px 0}
 strong{color:#1e2a32}
 </style></head><body><div class="wrap">
-<div class="meta">GeoRefine v1.2 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
+<div class="meta">GeoRefine v1.3 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
 <h1>GeoRefine v1.2 代码审查报告</h1>
 <p>审查范围：<code>app/</code> 全部 59 个模块（约 800 KB Python），外加一轮数值对勘（pyproj / Karney 精确积分）与 GUI 级回归（offscreen）。 方法：静态扫描（AST：裸 except / except-pass / 可变默认值 / assert）+ 逐模块读码 + 构造输入实测复现。 结论：<strong>修 18 处</strong>（其中 9 处会算出错数据、4 处会崩或丢结果），<strong>另有 10 处已定位但未改</strong>，列在第 3 节。</p>
 <hr>

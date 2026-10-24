@@ -126,7 +126,9 @@ def _decodable(raw: bytes, enc: str) -> bool:
 def _uniform_step(axis: list[float], name: str) -> float:
     d = np.diff(np.asarray(axis))
     step = float(np.median(d))
-    if np.max(np.abs(d - step)) > step * 0.5:
+    if step <= 0:
+        raise ValueError(f"CSV 格网 {name} 步长非法（<=0）")
+    if np.max(np.abs(d - step)) > step * 0.01:
         raise ValueError(f"CSV 格网 {name} 方向步长不均匀，暂不支持不规则格网")
     return step
 
@@ -179,23 +181,58 @@ def read_geoid99(path) -> GridData:
 
 
 def read_grd(path) -> GridData:
-    """Surfer 风格 GRD：6×double(glomn,glomx,glamn,glamx,dlo,dla) → nlo/nla 由范围/步长推算
-    → 数据 48 起 float32（i3==1）或 float64（i3==2）。"""
+    """支持标准 Surfer 二进制 DSBB、ASCII DSAA，以及 48 字节头 raw-GRD。"""
     path = Path(path)
     buf = path.read_bytes()
-    glomn, glomx, glamn, glamx, dlo, dla = struct.unpack_from("<6d", buf, 0)
-    nlo = int(round((glomx - glomn) / dlo)) + 1
-    nla = int(round((glamx - glamn) / dla)) + 1
-    n = nla * nlo
-    try:
-        vals = _f32(buf, 48, n).reshape(nla, nlo).copy()
-        fmt = "grd-f32"
-    except ValueError:
-        vals = np.frombuffer(buf, dtype="<f8", count=n, offset=48).reshape(nla, nlo).copy()
-        fmt = "grd-f64"
-    # GRD 行序为南→北（Surfer 惯例自 y最小 起）
-    vals[np.abs(vals - INVALID) < 0.001] = INVALID
-    return GridData(path.stem, glamn, glamx, glomn, glomx, dla, dlo, vals, fmt, str(path))
+    if buf.startswith(b"DSBB"):
+        # 标准 Surfer 6 二进制网格
+        if len(buf) < 56:
+            raise ValueError(f"Surfer DSBB 文件头损坏（大小 {len(buf)} < 56 字节）")
+        nlo, nla = struct.unpack_from("<2h", buf, 4)
+        glomn, glomx, glamn, glamx, _zmn, _zmx = struct.unpack_from("<6d", buf, 8)
+        if nlo <= 1 or nla <= 1:
+            raise ValueError(f"Surfer DSBB 网格行列数非法: cols={nlo}, rows={nla}")
+        dlo = (glomx - glomn) / (nlo - 1)
+        dla = (glamx - glamn) / (nla - 1)
+        n = nla * nlo
+        if len(buf) - 56 < n * 4:
+            raise ValueError(f"Surfer DSBB 数据长度不足：期望 {n * 4} 字节，实际仅剩余 {len(buf) - 56}")
+        vals = np.frombuffer(buf, dtype="<f4", count=n, offset=56).astype(np.float64).reshape(nla, nlo).copy()
+        vals[vals >= 1.7e38] = INVALID
+        return GridData(path.stem, glamn, glamx, glomn, glomx, dla, dlo, vals, "surfer-dsbb", str(path))
+    elif buf.startswith(b"DSAA"):
+        # 标准 Surfer ASCII 网格
+        text = buf.decode("ascii", errors="replace")
+        tokens = text.split()
+        if len(tokens) < 10:
+            raise ValueError("Surfer DSAA 格式损坏")
+        nlo, nla = int(tokens[1]), int(tokens[2])
+        glomn, glomx = float(tokens[3]), float(tokens[4])
+        glamn, glamx = float(tokens[5]), float(tokens[6])
+        dlo = (glomx - glomn) / (nlo - 1) if nlo > 1 else 1.0
+        dla = (glamx - glamn) / (nla - 1) if nla > 1 else 1.0
+        n = nla * nlo
+        raw_vals = [float(x) for x in tokens[9:9 + n]]
+        vals = np.array(raw_vals, dtype=np.float64).reshape(nla, nlo)
+        vals[vals >= 1.7e38] = INVALID
+        return GridData(path.stem, glamn, glamx, glomn, glomx, dla, dlo, vals, "surfer-dsaa", str(path))
+    else:
+        # 6×double (48 字节) 自定义/旧式二进制网格
+        glomn, glomx, glamn, glamx, dlo, dla = struct.unpack_from("<6d", buf, 0)
+        nlo = int(round((glomx - glomn) / dlo)) + 1
+        nla = int(round((glamx - glamn) / dla)) + 1
+        n = nla * nlo
+        data_bytes = len(buf) - 48
+        if data_bytes >= n * 8:
+            vals = np.frombuffer(buf, dtype="<f8", count=n, offset=48).astype(np.float64).reshape(nla, nlo).copy()
+            fmt = "grd-f64"
+        elif data_bytes >= n * 4:
+            vals = _f32(buf, 48, n).reshape(nla, nlo).copy()
+            fmt = "grd-f32"
+        else:
+            raise ValueError(f"GRD 数据字节数不足：期望至少 {n * 4} 字节，实际仅剩余 {data_bytes} 字节")
+        vals[np.abs(vals - INVALID) < 0.001] = INVALID
+        return GridData(path.stem, glamn, glamx, glomn, glomx, dla, dlo, vals, fmt, str(path))
 
 
 _READERS = {".gtx": read_gtx, ".tif": read_tif_grid, ".tiff": read_tif_grid,

@@ -49,8 +49,10 @@ def _merid_coefs(a_eff: float, e2: float):
           + 11025*e2**4/16384 + 43659*e2**5/65536)
     A2 = 3*e2/4 + 15*e2**2/16 + 525*e2**3/512 + 2205*e2**4/2048 + 72765*e2**5/65536
     A3 = 15*e2**2/64 + 105*e2**3/256 + 2205*e2**4/4096 + 10395*e2**5/16384
-    # 注：A4 末项分母取 13072。该系数族在正算与反算中被同一份实现共用，
-    # 两侧必须严格同值，否则往返闭合会被破坏（量级 < 0.01 mm，但会破坏逐位一致）。
+    # 注：A4 分母为 131072。该系数族在正算与反算中被同一份实现共用，
+    # 严格保持一致以保证数值往返闭合（量级 < 1e-9 m）。
+    # 级数截断至 sin(6B) 阶，留约 31 µm 残差，与行业基准软件（铁四院 CoordTran.exe）
+    # 全量对齐至 < 0.5 µm（参见 tests/test_gk_engine.py）。
     A4 = 35*e2**3/512 + 315*e2**4/2048 + 31185*e2**5/131072
     c = a_eff * (1.0 - e2)
     return (c * A1, -c * A2 / 2.0, c * A3 / 4.0, -c * A4 / 6.0)
@@ -63,18 +65,6 @@ def _meridian_arc(b_rad: float, m1: float, m2: float, m3: float, m4: float) -> f
     return m1 * b_rad - c * (abs(2*m2 + 4*m3 + 6*m4)*s
                              + (8*m3 + 32*m4)*s**3
                              + abs(32*m4)*s**5)
-
-
-def _dmeridian_arc(b_rad: float, m1, m2, m3, m4) -> float:
-    """dM/dB（解析，供反算牛顿迭代）。"""
-    s = math.sin(b_rad)
-    c = math.cos(b_rad)
-    A = abs(2*m2 + 4*m3 + 6*m4)
-    Bc = 8*m3 + 32*m4
-    Cc = abs(32*m4)
-    F = A*s + Bc*s**3 + Cc*s**5
-    Fp = A*c + 3*Bc*s*s*c + 5*Cc*s**4*c
-    return m1 - (-s*F + c*Fp*c)
 
 
 def gauss_forward(a: float, inv_f: float, l0: float, b0: float, h0: float,

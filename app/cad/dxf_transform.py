@@ -1,9 +1,9 @@
 """DXF 平面坐标 + 高程转换。
 
 坐标系：DXF 内部为 (X=东, Y=北)，与测量 (x=北, y=东) 相反。
-四参数矩阵（ezdxf Matrix44 行主序，平移在第 4 列）已按换算推导：
-  X2 = dy + b·Y_cad − a·X_cad  → 行1 = [-a, b, 0, dy]
-  Y2 = dx + a·Y_cad − b·X_cad  → 行2 = [-b, a, 0, dx]
+四参数矩阵（ezdxf Matrix44 行向量右乘 v·M，平移在第 4 行）已按换算推导：
+  X' = dy + a·X_cad + b·Y_cad  （东坐标）
+  Y' = dx − b·X_cad + a·Y_cad  （北坐标）
 INSERT 整体 transform（子实体自动跟随，不改块定义，防双重变换）。
 高程：height_fn(X_cad, Y_cad, z) -> (z_new, v, detail)，对带 Z 的点位重写。
 """
@@ -80,39 +80,46 @@ def transform_dxf(in_path, out_path, planar: Param4 | None = None, height_fn=Non
     def _bump(d, key):
         d[key] = d.get(key, 0) + 1
 
-    for idx, e in enumerate(entities):
+    for idx, ent in enumerate(entities):
         if cancel is not None and cancel.is_set():
             result.skipped += 1
             continue
-        dxftype = e.dxftype()
+        dxftype = ent.dxftype()
         _bump(before_counts, dxftype)
         try:
             height_done = False
             if M is not None and dxftype == "INSERT":
-                _transform_insert(e, planar, height_fn)   # INSERT 拒绝非严格正交矩阵，走专用分支
+                assert planar is not None
+                _transform_insert(ent, planar, height_fn)   # INSERT 拒绝非严格正交矩阵，走专用分支
                 height_done = height_fn is not None
             elif M is not None and dxftype == "CIRCLE":
-                _transform_circle_like(e, planar, height_fn, is_arc=False)  # OCS 实体走专用分支，避免镜像路径
+                assert planar is not None
+                _transform_circle_like(ent, planar, height_fn, is_arc=False)  # OCS 实体走专用分支，避免镜像路径
                 height_done = height_fn is not None
             elif M is not None and dxftype == "ARC":
-                _transform_circle_like(e, planar, height_fn, is_arc=True)
+                assert planar is not None
+                _transform_circle_like(ent, planar, height_fn, is_arc=True)
                 height_done = height_fn is not None
             elif M is not None:
-                e.transform(M)
+                ent.transform(M)
             # 高程处理：平面分支已经写过高程的实体在上一段完成，其余在这里补
             if height_fn is not None and not height_done:
-                _apply_height(e, dxftype, height_fn, apply_2d_elevation)
+                _apply_height(ent, dxftype, height_fn, apply_2d_elevation)
             _bump(after_counts, dxftype)
             result.transformed += 1
         except Exception as ex:  # noqa: BLE001
             _bump(result.unsupported, dxftype)
-            result.log.append(f"{dxftype}#{e.dxf.get('handle', '?')}: {ex}")
+            result.log.append(f"{dxftype}#{ent.dxf.get('handle', '?')}: {ex}")
         if progress_cb is not None:
             progress_cb(idx + 1, result.total, dxftype)
     result.by_type = after_counts
     # 实体数一致性校验
     if sum(after_counts.values()) != result.total - result.skipped:
         result.log.append("警告：转换后实体数与预期不一致")
+    if cancel is not None and cancel.is_set():
+        Path(out_path).unlink(missing_ok=True)
+        result.skipped = result.total - result.transformed
+        return result
     doc.saveas(out_path)
     result.out_path = out_path
     return result
@@ -128,7 +135,7 @@ def _transform_insert(e, p: Param4, height_fn):
     Y2 = p.dx - p.b * X + p.a * Y
     z2 = z
     if height_fn is not None:
-        zn, _v, _d = height_fn(X2, Y2, z)
+        zn, _v, _d = height_fn(X, Y, z)
         if zn is not None:
             z2 = zn
     e.dxf.insert = (X2, Y2, z2)
@@ -150,7 +157,7 @@ def _transform_circle_like(e, p: Param4, height_fn, is_arc: bool):
     Y2 = p.dx - p.b * c.x + p.a * c.y
     z2 = c.z
     if height_fn is not None:
-        zn, _v, _d = height_fn(X2, Y2, c.z)
+        zn, _v, _d = height_fn(c.x, c.y, c.z)
         if zn is not None:
             z2 = zn
     e.dxf.center = (X2, Y2, z2)

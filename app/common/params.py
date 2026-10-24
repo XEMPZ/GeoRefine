@@ -109,6 +109,8 @@ class ParamApplier:
         self.kind = param.get("kind")
         self.ell = (_ell.get_ellipsoid(param.get("ellipsoid", "CGCS2000"))
                     or _ell.CGCS2000)
+        self.ell_dst = (_ell.get_ellipsoid(param.get("ellipsoid_dst") or param.get("ellipsoid", "CGCS2000"))
+                        or self.ell)
         self.p4 = param.get("planar4")
         self.p3d = param.get("planar3")
         self.p7 = param.get("seven")
@@ -158,7 +160,7 @@ class ParamApplier:
         p = Param7(self.p7["dx"], self.p7["dy"], self.p7["dz"],
                    self.p7["rx_s"], self.p7["ry_s"], self.p7["rz_s"], self.p7["scale_ppm"])
         x2, y2, z2 = apply_7param(p, x, y, z)
-        return _ell.ecef_to_geodetic(x2, y2, z2, self.ell)
+        return _ell.ecef_to_geodetic(x2, y2, z2, self.ell_dst)
 
     def _apply_three_blh(self, lat, lon, h):
         from app.core import ellipsoid as _ell
@@ -167,7 +169,7 @@ class ParamApplier:
         x, y, z = _ell.geodetic_to_ecef(lat, lon, h, self.ell)
         p = Param3(self.p3["dx"], self.p3["dy"], self.p3["dz"])
         x2, y2, z2 = apply_3param(p, x, y, z)
-        return _ell.ecef_to_geodetic(x2, y2, z2, self.ell)
+        return _ell.ecef_to_geodetic(x2, y2, z2, self.ell_dst)
 
     def _apply_gk(self, lat, lon):
         import math as _m
@@ -542,7 +544,7 @@ class ParamApplier:
         else:
             p3 = Param3(self.p3["dx"], self.p3["dy"], self.p3["dz"])
             X2, Y2, Z2 = apply_3param(p3, X, Y, Z)
-        b2, l2, h2 = ecef_to_geodetic(X2, Y2, Z2, self.ell)   # 度
+        b2, l2, h2 = ecef_to_geodetic(X2, Y2, Z2, self.ell_dst)   # 度（采用目标椭球反算）
         return _m.radians(b2), _m.radians(l2), h2
 
     def eval_height_value(self, cx, cy):

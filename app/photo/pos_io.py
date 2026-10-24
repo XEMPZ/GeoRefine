@@ -143,9 +143,20 @@ def set_xmp_absolute_altitude(jpg_path, new_h: float) -> bool:
         m = re.search(rb'drone-dji:AbsoluteAltitude="([^"]*)"', seg)
         if not m:
             return False
-        old, new = m.group(1), f"{new_h:+.2f}".encode()
-        if len(new) > len(old):
-            new = new[:len(old)]
+        old = m.group(1)
+        cand = f"{new_h:.2f}".encode() if new_h >= 0 else f"{new_h:+.2f}".encode()
+        if len(cand) <= len(old):
+            new = cand
+        else:
+            cand1 = f"{new_h:.1f}".encode() if new_h >= 0 else f"{new_h:+.1f}".encode()
+            if len(cand1) <= len(old):
+                new = cand1
+            else:
+                cand0 = f"{round(new_h)}".encode()
+                if len(cand0) <= len(old):
+                    new = cand0
+                else:
+                    return False  # 杜绝粗暴截断数字产生错值
         new_seg = seg[:m.start(1)] + new + b" " * (len(old) - len(new)) + seg[m.end(1):]
         if len(new_seg) != len(seg):
             return False

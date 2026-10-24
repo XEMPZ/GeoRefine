@@ -120,26 +120,6 @@ def fit_3param2d(src_xy, dst_xy) -> FitResult4:
                       len(s), "三参数（仅平移，无尺度/旋转）")
 
 
-def fit_3param2d(src_xy, dst_xy) -> FitResult4:
-    """三参数（仅平移，无尺度/旋转）最小二乘。
-
-    适用于：同椭球同基准的精确三维坐标归算（高精度坐标对）——理论上不存在
-    尺度与旋转，四参数会把毫米级噪声吸进 K/α 造成过拟合。
-    返回 FitResult4（param.a=1, param.b=0，可直接用 apply_4param 应用）。
-    """
-    s = np.asarray(src_xy, dtype=float)
-    d = np.asarray(dst_xy, dtype=float)
-    if s.shape[0] < 1:
-        raise ValueError("三参数至少需要 1 个点")
-    dd = d - s
-    dx, dy = float(np.mean(dd[:, 0])), float(np.mean(dd[:, 1]))
-    res = dd - np.array([dx, dy])
-    rms = float(np.sqrt(np.mean(np.sum(res ** 2, axis=1)))) if len(res) else 0.0
-    return FitResult4(Param4(dx, dy, 1.0, 0.0), res, rms,
-                      float(np.max(np.hypot(res[:, 0], res[:, 1]))) if len(res) else 0.0,
-                      len(s), "三参数（仅平移，无尺度/旋转）")
-
-
 def to_cad_xy(x_north, y_east):
     """测量坐标 (x=北, y=东) → CAD 坐标 (X=东, Y=北)。"""
     return y_east, x_north

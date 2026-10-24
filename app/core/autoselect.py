@@ -36,10 +36,22 @@ _METHOD_TIPS = {
 def detect_coord_kind(arr2d) -> str:
     """判别 (n,2) 数组是经纬度还是平面坐标。"""
     a = np.asarray(arr2d, dtype=float)
-    c0, c1 = np.abs(a[:, 0]).max(), np.abs(a[:, 1]).max()
-    if c0 <= 360 and c1 <= 360:
-        return "lonlat"
-    return "planar"
+    if a.size == 0:
+        return "planar"
+    c0, c1 = float(np.abs(a[:, 0]).max()), float(np.abs(a[:, 1]).max())
+    if c0 > 360 or c1 > 360:
+        return "planar"
+    # 经纬度约束：纬度绝对值必须 <= 90°；若两列都存在 > 90° 的值，则绝不可能是经纬度
+    col0_can_lat = bool((np.abs(a[:, 0]) <= 90.0).all())
+    col1_can_lat = bool((np.abs(a[:, 1]) <= 90.0).all())
+    if not col0_can_lat and not col1_can_lat:
+        return "planar"
+    # 经度绝对值通常 <= 180°；两列需至少符合 (lat, lon) 或 (lon, lat) 搭配
+    col0_can_lon = bool((np.abs(a[:, 0]) <= 180.0).all())
+    col1_can_lon = bool((np.abs(a[:, 1]) <= 180.0).all())
+    if not (col0_can_lat and col1_can_lon) and not (col1_can_lat and col0_can_lon):
+        return "planar"
+    return "lonlat"
 
 
 def _rms(d):
@@ -84,17 +96,23 @@ def compare_methods(src_pts, dst_pts, src_h, dst_h, src_kind, dst_kind,
     s_xy, d_xy = src[ixy], dst[ixy]
     n_xy, n_h = len(ixy), len(ih)
 
-    def _xy_row(method, feasible, res_xy, note=""):
+    def _xy_row(method, feasible, res_xy, note="", extra=None):
         if res_xy is None:
-            rows.append({"method": method, "feasible": False, "n": n_xy, "rms_xy": None,
-                         "rms_h": None, "loo_rms_h": None, "selected": False, "note": note})
+            r = {"method": method, "feasible": False, "n": n_xy, "rms_xy": None,
+                 "rms_h": None, "loo_rms_h": None, "selected": False, "note": note}
+            if extra:
+                r.update(extra)
+            rows.append(r)
             return
         d = np.hypot(res_xy[:, 0], res_xy[:, 1])
-        rows.append({"method": method, "feasible": feasible, "n": n_xy,
-                     "rms_xy": _rms(d), "max_xy": float(np.max(d)),
-                     "rms_h": None, "loo_rms_h": None, "selected": False,
-                     "note": (note + "；" if note else "") + _METHOD_TIPS.get(method, ""),
-                     "res_xy": np.asarray(res_xy, dtype=float), "ixy": list(ixy)})
+        r = {"method": method, "feasible": feasible, "n": n_xy,
+             "rms_xy": _rms(d), "max_xy": float(np.max(d)),
+             "rms_h": None, "loo_rms_h": None, "selected": False,
+             "note": (note + "；" if note else "") + _METHOD_TIPS.get(method, ""),
+             "res_xy": np.asarray(res_xy, dtype=float), "ixy": list(ixy)}
+        if extra:
+            r.update(extra)
+        rows.append(r)
 
     # 用户投影参数（B/L→平面的 L0 与加常数）
     proj_l0 = float(proj["l0"]) if (proj and proj.get("l0") is not None) else None
@@ -106,7 +124,7 @@ def compare_methods(src_pts, dst_pts, src_h, dst_h, src_kind, dst_kind,
             try:
                 f4 = fit_4param(s_xy, d_xy)
                 pred = apply_4param(f4.param, s_xy[:, 0], s_xy[:, 1])
-                _xy_row("planar4", True, np.column_stack([pred[0] - d_xy[:, 0], pred[1] - d_xy[:, 1]]), f4.note)
+                _xy_row("planar4", True, np.column_stack([pred[0] - d_xy[:, 0], pred[1] - d_xy[:, 1]]), f4.note, extra={"_fit4": f4})
             except ValueError as e:
                 _xy_row("planar4", False, None, str(e))
         # 二维七参数（布尔莎模型平面退化）：以 (x, y, h) 构造局部 XYZ 解算，
@@ -187,7 +205,7 @@ def compare_methods(src_pts, dst_pts, src_h, dst_h, src_kind, dst_kind,
                 except ValueError:
                     continue
             if best74 is not None:
-                _xy_row("chain74", True, best74[3], f"L0={float(best74[1]):.6f}°; " + best74[2].note)
+                _xy_row("chain74", True, best74[3], f"L0={float(best74[1]):.6f}°; " + best74[2].note, extra={"_fit4": best74[2], "_l0": best74[1]})
             else:
                 _xy_row("chain74", False, None, "无可行中央子午线")
         # 四参数（源经纬度按平面坐标直接拟合）：两组平面坐标转换，未过投影
@@ -392,6 +410,8 @@ def build_param_dict(name: str, row: dict, ell_name: str = "WGS84",
     """把 compare_methods 的选中行打包为参数库 JSON（coordparam/1）。"""
     from datetime import datetime
 
+    if l0 is None and row.get("_l0") is not None:
+        l0 = row["_l0"]
     m = row["method"]
     param = {
         "schema": "coordparam/1",

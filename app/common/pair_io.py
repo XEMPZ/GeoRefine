@@ -146,7 +146,7 @@ def looks_like_south_pairs(path: str | Path) -> bool:
         cells = _split_cells(s)
         if len(cells) < 6:
             continue
-        off = 0 if _is_num(cells[0]) else 1          # 首列点名则偏移
+        off = 1 if len(cells) >= 7 else 0          # ≥7列时首列为点名（支持纯数字点名）
         if len(cells) - off < 6:
             continue
         try:
@@ -185,11 +185,15 @@ def parse_south_pairs(path: str | Path) -> list[SouthPair]:
         if not s or s.startswith(("#", "//")):
             continue
         cells = _split_cells(s)
-        off = 0 if _is_num(cells[0]) else 1
-        if len(cells) - off < 6:
+        if len(cells) >= 7:
+            name = cells[0]
+            off = 1
+        elif len(cells) == 6:
+            name = f"P{no}"
+            off = 0
+        else:
             raise ValueError(f"第 {no} 行需要至少 6 个数值列（点名可选），实际 {len(cells)} 列：{s[:60]}")
         try:
-            name = cells[0] if off == 1 else f"P{no}"   # 首列非数值=点名在场
             x1, y1, h1 = float(cells[off]), float(cells[off + 1]), float(cells[off + 2])
             x2, y2, h2 = float(cells[off + 3]), float(cells[off + 4]), float(cells[off + 5])
         except ValueError as e:

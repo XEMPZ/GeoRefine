@@ -278,7 +278,7 @@ def convert_model(model_dir: str | Path, out_dir: str | Path, param_doc: dict, *
 
     tool = tool or OsgToolchain()
     # 语义与 ApplyPage 一致：参数直接作用于局部顶点（OSGB 顶点 = 实际坐标 − SRSOrigin）
-    transform = PlanarVertexTransform(param_doc, mode=mode)
+    transform = PlanarVertexTransform(param_doc, mode=mode, origin=srs.origin)
     new_origin = derive_new_origin(param_doc, srs.origin, mode=mode, transform=transform)
 
     result = ModelConvertResult(src_root=str(root), dst_root=str(out_root),

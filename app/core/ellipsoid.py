@@ -70,8 +70,17 @@ def all_ellipsoids() -> dict:
 
 
 def get_ellipsoid(name: str):
-    """按名称取椭球（内置/自定义），不存在返回 None。"""
-    return custom_ellipsoids().get(name) or ELLIPSOIDS.get(name)
+    """按名称取椭球（内置/自定义，支持大小写不敏感匹配），不存在返回 None。"""
+    if not name or not isinstance(name, str):
+        return None
+    res = custom_ellipsoids().get(name) or ELLIPSOIDS.get(name)
+    if res is not None:
+        return res
+    nl = name.strip().lower()
+    for k, v in {**ELLIPSOIDS, **custom_ellipsoids()}.items():
+        if k.lower() == nl:
+            return v
+    return None
 
 
 def save_custom_ellipsoid(name: str, a, inv_f) -> _Path:

@@ -42,7 +42,7 @@ def planar_fns(planar_p4):
         return None, None
     from app.core.transform2d import apply_4param
     survey = lambda x, y: apply_4param(planar_p4, x, y)   # noqa: E731
-    cad = lambda X, Y: apply_4param(planar_p4, Y, X)      # noqa: E731
+    cad = lambda X, Y: (apply_4param(planar_p4, Y, X)[1], apply_4param(planar_p4, Y, X)[0])  # noqa: E731
     return survey, cad
 
 
@@ -79,30 +79,42 @@ def build_jobs(files, out_dir: str, planar_data: dict | None, hdata: dict,
         hfn = None
 
     jobs = []
+    seen_out = set()
+
+    def _unique_out(base_name: str) -> str:
+        stem, ext_s = Path(base_name).stem, Path(base_name).suffix
+        candidate = Path(out_dir) / f"{stem}_转换后{ext_s}"
+        c = 1
+        while str(candidate).lower() in seen_out:
+            c += 1
+            candidate = Path(out_dir) / f"{stem}_转换后_{c}{ext_s}"
+        seen_out.add(str(candidate).lower())
+        return str(candidate)
+
     for f in files:
         ext = Path(f).suffix.lower().lstrip(".")
         if ext in ("dxf", "shp", "dwg", "mdb") and lonlat_mode:
             return [], ("所选平面参数为“大地→平面”，仅支持文本点文件"
                         "（点名,经度,纬度,h；.dat 为 CASS 平面格式不适用）")
         if ext == "dxf":
-            out = str(Path(out_dir) / (Path(f).stem + "_转换后.dxf"))
+            out = _unique_out(Path(f).name)
             jobs.append({"kind": "dxf", "in": f, "out": out, "planar": planar_p4,
                          "height_fn": hfn, "apply_2d": apply_2d})
         elif ext == "shp":
-            out = str(Path(out_dir) / (Path(f).stem + "_转换后.shp"))
+            out = _unique_out(Path(f).name)
             jobs.append({"kind": "shp", "in": f, "out": out,
                          "planar_fn": planar_fn_cad, "height_fn": hfn})
         elif ext == "dwg":
             if planar_p4 is None and hfn is None:
                 return [], "DWG 至少需要平面或高程转换方式"
-            out = str(Path(out_dir) / (Path(f).stem + "_转换后.dxf"))
+            out = _unique_out(Path(f).stem + ".dxf")
             jobs.append({"kind": "dwg", "in": f, "out": out, "planar": planar_p4,
                          "height_fn": hfn, "apply_2d": apply_2d})
         elif ext == "mdb":
             jobs.append({"kind": "mdb", "in": f, "out": str(Path(out_dir)),
                          "planar_fn": planar_fn_cad, "height_fn": hfn})
         else:   # dat/txt/csv/xlsx 点文本
-            out = str(Path(out_dir) / (Path(f).stem + "_转换后." + (ext or "txt")))
+            out = _unique_out(Path(f).stem + "." + (ext or "txt"))
             if lonlat_mode:
                 ap = ParamApplier(planar_data)
                 pfn = lambda lon, lat: ap.apply_lonlat(lat, lon, 0.0,

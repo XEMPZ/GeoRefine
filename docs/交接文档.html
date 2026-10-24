@@ -20,8 +20,8 @@ blockquote{border-left:4px solid #c96f4a;background:#fdf6f0;margin:12px 0;paddin
 ul li{margin:4px 0}
 strong{color:#1e2a32}
 </style></head><body><div class="wrap">
-<div class="meta">GeoRefine v1.2 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
-<h1>GeoRefine 交接文档（v1.2）</h1>
+<div class="meta">GeoRefine v1.3 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
+<h1>GeoRefine 交接文档（v1.3）</h1>
 <blockquote>给接手的人 / 下一个 AI 工具看的：项目怎么跑、代码在哪、改过的坑、还剩什么。 用户向的说明见《用户手册.md》，算法与格式见《技术手册.md》。</blockquote>
 <hr>
 <h2>1. 项目概览</h2>
@@ -52,7 +52,7 @@ strong{color:#1e2a32}
   docs/                   用户手册、技术手册、交接文档、审查报告、截图
   models/ params/ logs/   运行时数据（不进 git，发布包含占位说明）</code></pre>
 <h3>关键约定（改代码前必读）</h3>
-<p>1. <strong>角度</strong>：<code>core/*</code> 内部一律<strong>弧度</strong>；只有 GUI 输入输出层用度或 d.ms。<code>ecef_to_geodetic()</code> 返回的是<strong>度</strong>（历史约定），转弧度要显式 <code>math.radians</code>。 2. <strong>平面坐标</strong>：x=北、y=东（与 CAD 的 X东/Y北相反，<code>cad/dxf_transform.py</code> 里有换算矩阵）。 3. <strong>加常数 x0/y0 单位 km</strong>，投影面大地高 h0 单位 m。 4. <strong>模型可见 ⟺ 可复现</strong>：写进结果表的东西要能从参数文件重建。 5. <strong>表格</strong>：一律用 <code>pages._CopyTable</code>（v1.2 起），不要直接用 QTableWidget，否则丢 Ctrl+C。 6. <strong>弹窗</strong>：用 <code>_quiet_info</code> / <code>_quiet_warn</code>（测试里会被替换成空函数）；自动重算路径用 <code>self._auto</code> 抑制弹窗。 7. <strong>异常</strong>：页面槽函数里的异常会被全局钩子记进 logs 并弹窗；不要用 <code>except: pass</code> 把计算错误吞掉（v1.2 修的就是这类问题）。</p>
+<p>1. <strong>角度</strong>：<code>core/*</code> 内部一律<strong>弧度</strong>；只有 GUI 输入输出层用度或 d.ms。<code>ecef_to_geodetic()</code> 返回的是<strong>度</strong>（历史约定），转弧度要显式 <code>math.radians</code>。 2. <strong>平面坐标</strong>：x=北、y=东（与 CAD 的 X东/Y北相反，<code>cad/dxf_transform.py</code> 里有换算矩阵）。 3. <strong>加常数 x0/y0 单位 km</strong>，投影面大地高 h0 单位 m。 4. <strong>模型可见 ⟺ 可复现</strong>：写进结果表的东西要能从参数文件重建。 5. <strong>表格</strong>：一律用 <code>pages._CopyTable</code>（v1.2 起），不要直接用 QTableWidget，否则丢 Ctrl+C。 6. <strong>弹窗</strong>：用 <code>_quiet_info</code> / <code>_quiet_warn</code>（测试里会被替换成空函数）；自动重算路径用 <code>self._auto</code> 抑制弹窗。 7. <strong>异常</strong>：页面槽函数里的异常会被全局钩子记进 logs 并弹窗；不要用 <code>except: pass</code> 把计算错误吞掉。</p>
 <hr>
 <h2>2. 跑起来</h2>
 <pre><code># 依赖
@@ -74,35 +74,23 @@ python tools/make_release.py --skip-build
 python tools/build_docs_html.py</code></pre>
 <blockquote><code>make_release.py</code> 会 <strong>rmtree</strong> 免安装目录：如果里面有你手动放的 <code>models/</code>、<code>params/</code>、<code>logs/</code>，先备份。</blockquote>
 <hr>
-<h2>3. v1.2 改了什么（相对 v1.1）</h2>
-<h3>新增</h3>
-<ul><li><strong>全表格 Ctrl+C 复制</strong>（<code>_CopyTable</code>）：选区/整表 → TSV 剪贴板；输入表右键菜单也有「复制选中单元格」。</li><li><strong>全局崩溃钩子</strong>（<code>main.py</code>）：未捕获异常写 <code>logs/crash_*.log</code> 并弹窗（打包版没有控制台，以前是&quot;点了没反应&quot;）。</li><li>新增 7 个测试文件（复制、崩溃钩子、角度格式、空间转换、DXF 高程、页面回归、数值核心），共 37 项断言。</li><li>本手册、交接文档、审查报告；用户手册按当前 UI 全面重写。</li></ul>
-<h3>修复（18 处，详见 <code>docs/审查报告-v1.2.md</code>）</h3>
-<p>计算类：七参数 BLH 输出的度/弧度混用、平面高程拟合用错自变量、保存参数写死 CGCS2000 椭球、d.ms 识别缺 ε、子午线弧长两处系数（e⁸ / e¹⁰ 分母）、DXF 仅高程模式漏改 CIRCLE/ARC/INSERT、OSGB 退出码不检查、SRSOrigin 解析静默变 0。 流程类：照片批处理完成回调 KeyError、照片页缺失的平面参数下拉、控制点导入目标列被覆盖、换带页高程列非数值中断整批、多边形页 b0 取错列、OSGB 页重复 connect、纯高程参数点数恒 0、空 CASS 文件 NameError、DWG 报错信息缺 HRESULT、两处文档字符串非法转义。</p>
+<h2>3. v1.3 修复与演进（全量 38 项缺陷闭环，27/27 测试全 PASS）</h2>
+<h3>第一部分：v1.2 遗留修复（10 项）</h3>
+<ul><li>OSGB 放行合法大地源参数并透传投影覆盖。</li><li>LAS 1.4 写回保留源 EVLR（CRS WKT 等）。</li><li>LAS 转换异常时清理未完成的残留文件。</li><li>WSL 顶点改写与原生 C++ 统一采用 <code>u = A @ p + b</code>。</li><li>Surfer 双精度 GRD 判别支持。</li><li>纯数字点名导出再导入列错位修复。</li><li>局部平面坐标判定边界收紧。</li><li>高斯投影弧长公式注释与基准软件对齐说明。</li><li>OSGB 任务临时目录即时清理。</li><li>自动选型导出四参数 <code>_fit4</code> 正常填充。</li></ul>
+<h3>第二部分：AST 与代码深度审计（6 项）</h3>
+<ul><li><code>SpacePage</code> 导入文件 <code>_src_lonlat()</code> AttributeError 崩溃修复。</li><li><code>SpacePage</code> / <code>ApplyPage</code> 通用表格导入缺失 <code>read_points_table</code> 导入修复。</li><li><code>file_jobs.py</code> CAD/SHP 转换输出坐标轴颠倒（东/北互换）重大数学错误修正。</li><li>精度对比页表头大写 <code>H</code> 导入 float 转换异常修复。</li><li><code>transform2d.py</code> 冗余重复代码删除。</li><li><code>GaussPage</code> 冗余重复方法定义清理。</li></ul>
+<h3>第三部分：GPT-6 交叉核验新挖出缺陷全面闭环（22 项）</h3>
+<ul><li><strong>点云与模型</strong>：LAS EVLR 写入异常向上冒泡不吞异常；<code>requirements.txt</code> 补齐 <code>laspy[lazrs]&gt;=2.5.0</code>；输入/输出同目录或嵌套目录循环处理递归拦截；OSGB 进程轮询与取消即时终止；LAS 大坐标 32 位整数溢出自动偏移。</li><li><strong>高程拟合计算时序</strong>：CASS <code>.dat</code>、DXF 块与圆弧、PGDB 要素类高程拟合自变量全部严格固定为源坐标 <code>(x_src, y_src)</code>，避免在平面变换后坐标上求值。</li><li><strong>GIS 与图形格式</strong>：Shapefile 针对 3D/带 M 要素（PolylineZ、PolygonZ、MultiPointZ）采用标准三维写入接口，杜绝类型不匹配并完整保留 Z 坐标与 M 属性；Surfer DSBB 二进制网格与 DSAA ASCII 网格原生解析；不规则格网步长一致性阈值收紧至 1%。</li><li><strong>坐标系统与数学核心</strong>：跨椭球七参数/三参数转换增加目标椭球 <code>ell_dst</code> 记录与反算，彻底消除跨基准产生的 ~108 米高程系统偏差；通用导入器引入标准 <code>csv.reader</code> 正确处理引号内逗号，且通过 <code>math.isfinite</code> 严格拦截 <code>nan</code>/<code>inf</code>；<code>.ipj</code> 打开前验证文件存在性防止空文件生成。</li><li><strong>流程与健壮性</strong>：照片批处理根目录父子包含去重；同名输出文件递增编号防覆盖；各文件转换取消时即时清理磁盘残余半成品；主窗口关闭时全量通知后台 Worker 停止并等待安全退出。</li></ul>
 <hr>
-<h2>4. 已知问题 / 待办（按优先级）</h2>
-<table><thead><tr><th>#</th><th>位置</th><th>问题</th><th>建议</th></tr></thead><tbody>
-<tr><td>1</td><td><code>pages.py</code> OsgbPage.do_run vs _update_param_hint</td><td>提示说支持&quot;大地源参数 + 源侧投影&quot;，<code>do_run</code> 却直接 return，功能不可达（引擎 <code>osgb/transform.py</code> 已实现）</td><td>删掉 do_run 里的早退，或把提示改成&quot;不支持&quot;，两边取一致</td></tr>
-<tr><td>2</td><td><code>pointcloud/las_io.py</code> 写回</td><td>输出 LAS 丢源 EVLR（LAS 1.4 的 CRS WKT 常在 EVLR），且 res.ok=True</td><td><code>with laspy.open(src) as r: evlrs = r.evlrs</code>，写完点后 <code>w.write_evlrs(evlrs)</code></td></tr>
-<tr><td>3</td><td><code>pointcloud/las_job.py</code> 异常分支</td><td>失败/取消后不删半成品 LAS，坏文件混进输出目录</td><td>except 里 <code>Path(dst).unlink(missing_ok=True)</code></td></tr>
-<tr><td>4</td><td><code>osgb/osgb_batch.py</code> + <code>_wsl_rewrite.py</code></td><td><code>u = A(p+origin)+b−new_origin</code> 与 C++ 的 <code>p = A·p + b</code> 口径不一致；纯平移时等于没转（该函数目前无 GUI 调用点）</td><td>统一成 <code>u = A@p + b</code>，或明确写清口径</td></tr>
-<tr><td>5</td><td><code>core/geoid.py</code> read_grd</td><td>f32/f64 判别不可达，Surfer 双精度 GRD 会读成乱码</td><td>按文件头或字节数判精度，造一个 f64 样例复现</td></tr>
-<tr><td>6</td><td><code>common/pair_io.py</code> parse_south_pairs</td><td>用&quot;首列能否转 float&quot;判点名，纯数字点名导出再导入会错位一列</td><td>按列数固定解析，或导出时强制加前缀</td></tr>
-<tr><td>7</td><td><code>core/autoselect.py</code> detect_coord_kind</td><td>`</td><td>v</td><td>&lt;=360` 判经纬度，局部平面系（坐标都 &lt;360 m）会被误判</td><td>结合多列量级/带号/小数位判断</td></tr>
-<tr><td>8</td><td><code>core/gk_engine.py</code></td><td>级数缺 sin8φ 项，子午线弧长留约 31 µm（0.03 mm）残差</td><td>想消掉就补 A5 项（<code>315e⁸/131072</code>），否则保持现状并在注释里写明</td></tr>
-<tr><td>9</td><td><code>osgb/flash.py</code></td><td>mkdtemp 的任务清单一律不清理（每次转换泄漏一个临时目录）</td><td>用完 <code>shutil.rmtree(ignore_errors=True)</code></td></tr>
-<tr><td>10</td><td><code>logic/autoselect.py</code></td><td><code>build_param_dict</code> 依赖从不写入的 <code>row[&quot;_fit4&quot;]</code>（当前只在测试路径）</td><td>补齐或删除该分支</td></tr>
-</tbody></table>
-<hr>
-<h2>5. 调试入口</h2>
+<h2>4. 调试入口</h2>
 <table><thead><tr><th>想知道什么</th><th>看哪里</th></tr></thead><tbody>
 <tr><td>用户点了什么、算了多少点</td><td><code>logs/operation_log.jsonl</code>（页面「处理台账」可读）</td></tr>
-<tr><td>崩在哪个槽函数</td><td><code>logs/crash_&lt;时间&gt;.log</code>（v1.2 起）</td></tr>
+<tr><td>崩在哪个槽函数</td><td><code>logs/crash_&lt;时间&gt;.log</code></td></tr>
 <tr><td>参数结构对不对</td><td>参数库页【查看 JSON】，或直接看 <code>params/*.json</code></td></tr>
-<tr><td>投影/高程算得对不对</td><td><code>tests/test_core_fixes.py</code>、<code>tests/test_gk_engine.py</code>，或对照 <code>tools/verify_models.py</code>（用 pyproj）</td></tr>
+<tr><td>投影/高程算得对不对</td><td><code>tests/test_round2_fixes.py</code>、<code>tests/test_v13_fixes.py</code>、<code>tests/test_core_fixes.py</code>、<code>tests/test_gk_engine.py</code></td></tr>
 <tr><td>OSGB 转换实际执行了什么命令</td><td><code>osgb/flash.py</code> 的 <code>res.raw</code>（stdout+stderr 尾部 4 KB）</td></tr>
 </tbody></table>
 <hr>
-<h2>6. 接手时的建议路线</h2>
-<p>1. 先跑 <code>python run_tests.py</code>，确认 25/25 全绿（DWG 那条在 CAD 忙时会跳过）。 2. 读 <code>docs/技术手册.md</code> 的坐标/高程口径与算法依据，再动计算代码。 3. 改 UI 只在 <code>app/gui/pages.py</code>；改算法放 <code>app/core</code> 或 <code>app/logic</code>（保持无 Qt 依赖，方便测试）。 4. 每改一处，补一条 <code>tests/test_*.py</code> 断言；<code>run_tests.py</code> 会自动发现。 5. 发布前：<code>python run_tests.py</code> → <code>pyinstaller</code> → <code>make_release.py</code> → 手工点一遍改动页。 6. 版本号在 <code>app/__init__.py</code>、<code>tools/make_release.py</code>、<code>main_window.py</code> 的侧边栏标签、<code>README.md</code> 四处，改时一起改。</p>
+<h2>5. 接手时的建议路线</h2>
+<p>1. 先跑 <code>python run_tests.py</code>，确认 28/28 全绿（DWG 那条在 CAD 忙时会跳过）。 2. 读 <code>docs/技术手册.md</code> 与 <code>docs/审查报告-v1.3.md</code> 的坐标/高程口径与算法依据，再动计算代码。 3. 改 UI 只在 <code>app/gui/pages.py</code>；改算法放 <code>app/core</code> 或 <code>app/logic</code>（保持无 Qt 依赖，方便测试）。 4. 每改一处，补一条 <code>tests/test_*.py</code> 断言；<code>run_tests.py</code> 会自动发现。 5. 发布前：<code>python run_tests.py</code> → <code>pyinstaller</code> → <code>make_release.py</code> → 手工点一遍改动页。 6. 版本号在 <code>app/__init__.py</code>、<code>tools/make_release.py</code>、<code>main_window.py</code> 的侧边栏标签、<code>README.md</code> 四处，改时一起改。</p>
 </div></body></html>

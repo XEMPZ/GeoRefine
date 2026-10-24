@@ -256,18 +256,26 @@ def refit(method: str, s_used, d_used, proj: dict | None, kind: tuple[str, str])
         text = (f"直接投影（无基准转换）：L0={float(proj['l0']):.6f}°, "
                 f"y0={float(proj.get('y0_m', 0.0)) / 1000:.3f} km")
     elif method == "three":
-        xyz1 = np.column_stack(geodetic_to_ecef(s_used[:, 1], s_used[:, 0], s_used[:, 2]))
-        xyz2 = np.column_stack(geodetic_to_ecef(d_used[:, 1], d_used[:, 0], d_used[:, 2]))
+        ell_src = proj.get("ell") or proj.get("ell_src")
+        ell_dst = proj.get("ell_dst") or proj.get("ell")
+        xyz1 = np.column_stack(geodetic_to_ecef(s_used[:, 1], s_used[:, 0], s_used[:, 2], ell_src))
+        xyz2 = np.column_stack(geodetic_to_ecef(d_used[:, 1], d_used[:, 0], d_used[:, 2], ell_dst))
         f3 = fit_3param(xyz1, xyz2)
         updates["three"] = {"dx": f3.param.dx, "dy": f3.param.dy, "dz": f3.param.dz}
+        if ell_dst and ell_src and getattr(ell_dst, "name", None) != getattr(ell_src, "name", None):
+            updates["ellipsoid_dst"] = getattr(ell_dst, "name", "CGCS2000")
         text = f"三参数（平移）：dX={f3.param.dx:.4f} dY={f3.param.dy:.4f} dZ={f3.param.dz:.4f} m"
     elif method == "seven":
-        xyz1 = np.column_stack(geodetic_to_ecef(s_used[:, 1], s_used[:, 0], s_used[:, 2]))
-        xyz2 = np.column_stack(geodetic_to_ecef(d_used[:, 1], d_used[:, 0], d_used[:, 2]))
+        ell_src = proj.get("ell") or proj.get("ell_src")
+        ell_dst = proj.get("ell_dst") or proj.get("ell")
+        xyz1 = np.column_stack(geodetic_to_ecef(s_used[:, 1], s_used[:, 0], s_used[:, 2], ell_src))
+        xyz2 = np.column_stack(geodetic_to_ecef(d_used[:, 1], d_used[:, 0], d_used[:, 2], ell_dst))
         f7 = fit_7param_refined(xyz1, xyz2)
         updates["seven"] = {"dx": f7.param.dx, "dy": f7.param.dy, "dz": f7.param.dz,
                             "rx_s": f7.param.rx_s, "ry_s": f7.param.ry_s, "rz_s": f7.param.rz_s,
                             "scale_ppm": f7.param.scale_ppm}
+        if ell_dst and ell_src and getattr(ell_dst, "name", None) != getattr(ell_src, "name", None):
+            updates["ellipsoid_dst"] = getattr(ell_dst, "name", "CGCS2000")
         text = (f"七参数（布尔莎）：dX={f7.param.dx:.4f} dY={f7.param.dy:.4f} dZ={f7.param.dz:.4f} m\n"
                 f"Rx={f7.param.rx_s:.2f}″ Ry={f7.param.ry_s:.2f}″ Rz={f7.param.rz_s:.2f}″ "
                 f"m={f7.param.scale_ppm:+.4f} ppm")
@@ -316,6 +324,8 @@ def refit(method: str, s_used, d_used, proj: dict | None, kind: tuple[str, str])
             if method == "inv_chain3":
                 f3 = fit_3param(xyz1, xyz2)
                 updates["three"] = {"dx": f3.param.dx, "dy": f3.param.dy, "dz": f3.param.dz}
+                if ell_t and ell and getattr(ell_t, "name", None) != getattr(ell, "name", None):
+                    updates["ellipsoid_dst"] = getattr(ell_t, "name", "CGCS2000")
                 text = (ptxt + "\n"
                         f"三参数（平移）：dX={f3.param.dx:.4f} dY={f3.param.dy:.4f} "
                         f"dZ={f3.param.dz:.4f} m")
@@ -324,6 +334,8 @@ def refit(method: str, s_used, d_used, proj: dict | None, kind: tuple[str, str])
                 updates["seven"] = {"dx": f7.param.dx, "dy": f7.param.dy, "dz": f7.param.dz,
                                     "rx_s": f7.param.rx_s, "ry_s": f7.param.ry_s,
                                     "rz_s": f7.param.rz_s, "scale_ppm": f7.param.scale_ppm}
+                if ell_t and ell and getattr(ell_t, "name", None) != getattr(ell, "name", None):
+                    updates["ellipsoid_dst"] = getattr(ell_t, "name", "CGCS2000")
                 text = (ptxt + "\n"
                         f"七参数（布尔莎）：dX={f7.param.dx:.4f} dY={f7.param.dy:.4f} "
                         f"dZ={f7.param.dz:.4f} m\n"

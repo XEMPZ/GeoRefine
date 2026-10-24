@@ -30,7 +30,10 @@ from app.core.transform3d import fit_3param, fit_7param, fit_7param_refined
 
 def read_ipj(path) -> dict:
     """读 .ipj/.db（SQLite）→ {表名: [行dict]}；表不存在则缺省空表。"""
-    con = sqlite3.connect(str(path))
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"IPJ 文件不存在: {path}")
+    con = sqlite3.connect(str(p))
     con.text_factory = lambda b: b.decode("utf-8", "replace")
     try:
         cur = con.cursor()

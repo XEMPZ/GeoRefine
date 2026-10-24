@@ -110,6 +110,10 @@ def convert_las_file(tf: LasVertexTransform, src, dst, *, chunk_mb: float = 64.0
         res.maxs = mx
     except Exception as exc:  # noqa: BLE001
         res.reason = "%s: %s" % (type(exc).__name__, exc)
+        try:
+            Path(dst).unlink(missing_ok=True)
+        except OSError:
+            pass
     res.seconds = time.time() - t0
     return res
 
@@ -121,8 +125,10 @@ def convert_pointcloud(src_root, dst_root, param_doc, *, mode: str = "xyz",
     """整个目录的 LAS 转换。输出目录镜像输入结构，绝不覆盖源文件。"""
     src_root = Path(src_root)
     dst_root = Path(dst_root)
-    if src_root.resolve() == dst_root.resolve():
-        raise ValueError("输出目录不能与输入目录相同（拒绝覆盖源数据）")
+    s_res = src_root.resolve()
+    d_res = dst_root.resolve()
+    if s_res == d_res or d_res.is_relative_to(s_res):
+        raise ValueError("输出目录不能是输入目录或其子目录（拒绝覆盖源数据与递归死循环）")
 
     files = find_las_files(src_root, recursive=recursive)
     tf = LasVertexTransform(param_doc, mode=mode, proj_override=proj_override)

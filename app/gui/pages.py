@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 from app import app_root
 from app.common import hconv
 from app.common.io_csv import read_points_csv
+from app.common.io_import import read_points_table
 from app.common.logutil import OpLog
 from app.common.params import ParamApplier, ParamLibrary
 from app.logic import cp_methods as _cp
@@ -2313,7 +2314,7 @@ class OsgbPage(QWidget):
             if name:
                 doc = ParamLibrary(PARAMS_DIR).load(name)
                 mode = self.current_mode()
-                A, b, new = _f.coeffs_for_document(doc, srs, mode=mode)
+                A, b, new = _f.coeffs_for_document(doc, srs, mode=mode, proj_override=self.proj_override())
                 lines.append("")
                 lines.append(f"仿射系数（{mode} 模式）：")
                 for i in range(3):
@@ -2359,11 +2360,21 @@ class OsgbPage(QWidget):
         except Exception as e:  # noqa: BLE001
             _quiet_warn(self, "参数加载失败", str(e))
             return
-        if doc.get("source_kind") != "planar":
+        sk = doc.get("source_kind", "")
+        kind = doc.get("kind", "")
+        src_lonlat = (sk == "lonlat") or kind in ("seven", "three", "chain74")
+        if sk != "planar" and not src_lonlat:
             _quiet_warn(self, "参数不适用",
-                        f"该参数的源坐标系是 {doc.get('source_kind')}，不是平面坐标。\n"
-                        "OSGB 顶点是相对 SRSOrigin 的平面偏移量，只能用平面源参数转换。")
+                        f"该参数的源坐标系是 {sk}，不是平面坐标。\n"
+                        "OSGB 顶点是相对 SRSOrigin 的平面偏移量，只能用平面源参数或大地源参数转换。")
             return
+        if src_lonlat:
+            has_proj = bool(self.proj_override()) or bool((doc.get("projection_src") or {}).get("l0"))
+            if not has_proj:
+                _quiet_warn(self, "缺少源侧投影",
+                            f"参数「{name}」源为大地坐标（{kind}），需先把 OSGB 平面顶点反算为经纬度。\n"
+                            "请在下方「投影参数」中设置源侧中央子午线 L0。")
+                return
 
         # 二次确认（不可逆的批量写盘）
         ans = QMessageBox.question(
@@ -3656,18 +3667,20 @@ class CadPage(QWidget):
             self.report.append(f"[失败] {Path(item['file']).name}: {item['error']}")
             return
         r = item["result"]
+        unsupp_cnt = sum(v if isinstance(v, (int, float)) else 1 for v in r.unsupported.values()) if r.unsupported else 0
         if hasattr(r, "features"):
             extra = "；".join(r.log[:-1]) if len(r.log) > 1 else ""
             self.report.append(f"[完成] {Path(item['file']).name} → {len(r.out_paths)} 个 SHP  "
                                f"要素类 {r.transformed}/{r.total}，要素 {r.features}"
-                               + (f"，未支持 {sum(r.unsupported.values())}" if r.unsupported else ""))
+                               + (f"，未支持 {unsupp_cnt}" if r.unsupported else ""))
             if extra:
                 self.report.append("    " + extra)
         else:
             self.report.append(f"[完成] {Path(item['file']).name} → {Path(r.out_path).name}  "
-                               f"实体 {r.transformed}/{r.total}，未支持 {sum(r.unsupported.values())}")
+                               f"实体 {r.transformed}/{r.total}，未支持 {unsupp_cnt}")
         if r.unsupported:
-            self.report.append("    " + ", ".join(f"{k}×{v}" for k, v in r.unsupported.items()))
+            unsupp_str = ", ".join(f"{k}×{v}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in r.unsupported.items())
+            self.report.append("    " + unsupp_str)
 
     def _on_done(self, ok: int):
         self.btn_start.setEnabled(True)
@@ -4448,12 +4461,6 @@ class GaussPage(QWidget):
         gl.setColumnStretch(1, 1)
         return g
 
-    def _show_ell(self):
-        _sync_ell_fields(self)
-
-    def _current_ell(self):
-        return _current_ell_from(self)
-
     def _read_params(self, w):
         from app.core import anglefmt
         from app.core.gk_engine import ProjParams
@@ -4799,7 +4806,8 @@ class SpacePage(QWidget):
     def load_file(self, path: str):
         """导入：手簿 .cot（按参数侧别取 BLH 或 xyh）/ CASS 公共点 / 通用表格（三坐标列）。"""
         from app.common import pair_io
-        expect_lonlat = self._src_lonlat()
+        s, _, _d = self._kind().partition("->")
+        expect_lonlat = (s == "BLH")
         filled = None
         if Path(path).suffix.lower() == ".cot":
             try:
@@ -4808,6 +4816,8 @@ class SpacePage(QWidget):
                 _quiet_warn(self, "导入失败", str(e))
                 return
             filled = [([p.l_deg, p.b_deg, p.h_ell], p.name) for p in pts] if expect_lonlat                 else [([p.x, p.y, p.h_normal], p.name) for p in pts]
+            if expect_lonlat:
+                self.fmt_in_deg.setChecked(True)
         elif pair_io.looks_like_cass(path):
             try:
                 pairs = pair_io.parse_cass(path)
@@ -5152,6 +5162,8 @@ class ApplyPage(QWidget):
                 _quiet_warn(self, "导入失败", str(e))
                 return
             filled = [([p.l_deg, p.b_deg, p.h_ell], p.name) for p in pts] if expect_lonlat                 else [([p.x, p.y, p.h_normal], p.name) for p in pts]
+            if expect_lonlat and hasattr(self, "fmt_d"):
+                self.fmt_d.setChecked(True)
         elif pair_io.looks_like_cass(path):
             try:
                 pairs = pair_io.parse_cass(path)

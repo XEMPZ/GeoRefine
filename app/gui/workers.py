@@ -71,7 +71,14 @@ class PhotoBatchWorker(QThread):
             merged = {"rows": [], "ok": 0, "failed": 0, "skipped": 0, "total": 0,
                       "ledger_csv": None, "roots": self.roots}
             done = 0
-            for root in self.roots:
+            # 根目录去重与重叠子目录排除，防止同一照片被重复处理
+            clean_roots = []
+            for r in self.roots:
+                rp = Path(r).resolve()
+                if not any(rp == c or rp.is_relative_to(c) for c in clean_roots):
+                    clean_roots.append(rp)
+            processed_photos = set()
+            for root in clean_roots:
                 if self.cancel_event.is_set():
                     break
                 res = photo_batch.process(root, fn, mode_name=mode_name,

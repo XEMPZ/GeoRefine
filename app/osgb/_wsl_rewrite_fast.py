@@ -97,12 +97,12 @@ def main(src, dst, params_path):
             if len(parts) < 3:
                 out.append(lines[k])
                 continue
-            x = float(parts[0]) + o0
-            y = float(parts[1]) + o1
-            z = float(parts[2]) + o2
-            u = a00 * x + a01 * y + a02 * z + b0 - n0
-            v = a10 * x + a11 * y + a12 * z + b1 - n1
-            w = a20 * x + a21 * y + a22 * z + b2 - n2
+            x = float(parts[0])
+            y = float(parts[1])
+            z = float(parts[2])
+            u = a00 * x + a01 * y + a02 * z + b0
+            v = a10 * x + a11 * y + a12 * z + b1
+            w = a20 * x + a21 * y + a22 * z + b2
             out.append(pad)
             out.append("%.7f" % u)
             out.append(" ")

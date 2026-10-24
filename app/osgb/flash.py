@@ -163,11 +163,18 @@ def run_vertex_transform_batch(binary: str | Path, job_list: str | Path, *,
         cmd = [bin_s, "--batch", str(job_list), options, str(threads)]
 
     if cancel is not None:
-        # 边跑边看取消标志：C++ 工具一次调用处理整批，无法中途插入，
-        # 因此用"跑完后如果想取消就丢弃结果"的语义，并允许调用方提前中止等待
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              text=True, encoding="utf-8", errors="replace")
         try:
+            import time
+            while p.poll() is None:
+                if cancel():
+                    p.kill()
+                    p.wait(timeout=5)
+                    res.raw = "已取消"
+                    res.failures.append("用户取消")
+                    return res
+                time.sleep(0.1)
             out, err = p.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             p.kill()
@@ -235,8 +242,10 @@ def convert_model_fast(model_dir: str | Path, out_dir: str | Path, param_doc: di
 
     root = find_model_root(model_dir)
     out_root = Path(out_dir)
-    if out_root.resolve() == root.resolve():
-        raise ValueError("输出目录不能与模型目录相同（拒绝覆盖输入）")
+    r_res = root.resolve()
+    o_res = out_root.resolve()
+    if o_res == r_res or o_res.is_relative_to(r_res):
+        raise ValueError("输出目录不能是模型目录或其子目录（拒绝覆盖输入与递归死循环）")
     out_root.mkdir(parents=True, exist_ok=True)
 
     srs = load_metadata(root / "metadata.xml")
@@ -256,19 +265,23 @@ def convert_model_fast(model_dir: str | Path, out_dir: str | Path, param_doc: di
 
     # 任务清单 + 结果目录
     tmp = Path(tempfile.mkdtemp(prefix="osgbflash_"))
-    lst = build_job_list(jobs, A, b, tmp / "jobs.tsv", backend=backend_of(binary))
-    res = run_vertex_transform_batch(binary, lst, options=options, threads=threads, cancel=cancel)
+    try:
+        lst = build_job_list(jobs, A, b, tmp / "jobs.tsv", backend=backend_of(binary))
+        res = run_vertex_transform_batch(binary, lst, options=options, threads=threads, cancel=cancel)
 
-    if not keep_origin:
-        # 需要改写 SRSOrigin
-        info = SrsInfo(srs=srs.srs, origin=tuple(float(v) for v in new_origin),
-                       origin_kind=srs.origin_kind, epsg=srs.epsg,
-                       enu_latlon=srs.enu_latlon, raw_xml=srs.raw_xml)
-        write_metadata_xml(out_root / "metadata.xml", info, template=srs.raw_xml)
-    else:
-        # SRSOrigin 不变，但输出目录要有一份 metadata.xml
-        (out_root / "metadata.xml").write_text(srs.raw_xml, encoding="utf-8")
+        if not keep_origin:
+            # 需要改写 SRSOrigin
+            info = SrsInfo(srs=srs.srs, origin=tuple(float(v) for v in new_origin),
+                           origin_kind=srs.origin_kind, epsg=srs.epsg,
+                           enu_latlon=srs.enu_latlon, raw_xml=srs.raw_xml)
+            write_metadata_xml(out_root / "metadata.xml", info, template=srs.raw_xml)
+        else:
+            # SRSOrigin 不变，但输出目录要有一份 metadata.xml
+            (out_root / "metadata.xml").write_text(srs.raw_xml, encoding="utf-8")
 
-    if progress:
-        progress(res)
-    return res
+        if progress:
+            progress(res)
+        return res
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)

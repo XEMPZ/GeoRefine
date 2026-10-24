@@ -117,7 +117,7 @@ def build(md_path: Path, title: str) -> None:
     page = f"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title><style>{CSS}</style></head><body><div class="wrap">
-<div class="meta">GeoRefine v1.2 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
+<div class="meta">GeoRefine v1.3 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
 {body}
 </div></body></html>"""
     out = md_path.with_suffix(".html")
@@ -130,3 +130,4 @@ if __name__ == "__main__":
     build(DOCS / "交接文档.md", "GeoRefine 交接文档")
     build(DOCS / "技术手册.md", "GeoRefine 技术手册")
     build(DOCS / "审查报告-v1.2.md", "GeoRefine v1.2 代码审查报告")
+    build(DOCS / "审查报告-v1.3.md", "GeoRefine v1.3 代码深度审查与缺陷修复报告")

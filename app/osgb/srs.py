@@ -5,7 +5,7 @@ r"""OSGB 模型的参考坐标系（SRS）与原点（SRSOrigin）解析/回写�
     OSGB 顶点 = 实际坐标 − SRSOrigin
 
 - `SRS` 为投影坐标系（如 `EPSG:4547`）时，顶点是**投影平面坐标的局部偏移**，
-  实际坐标 = 顶点 + SRSOrigin，三个分量分别是 (北 x, 东 y, 高 z)。
+  实际坐标 = 顶点 + SRSOrigin，三个分量分别是 (东 E, 北 N, 高 H)。
 - `SRS` 为 `ENU:lat,lon` 时，顶点是**局部 ENU 米**，SRSOrigin 为 (0, 0, 高程)。
 - `SRS` 为 `local` 或缺失时，顶点没有地理基准，只能做纯几何变换。
 

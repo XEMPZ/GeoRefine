@@ -70,7 +70,7 @@ def list_feature_classes(mdb_path) -> list[str]:
         conn.Close()
 
 
-def decode_blob(b: bytes) -> dict:
+def decode_blob(b: bytes, hasz: bool = True) -> dict:
     """解码 ESRI 几何 blob → {kind, pts, parts, z}。kind ∈ point/poly。"""
     if len(b) < 4:
         raise ValueError("几何 blob 过短")
@@ -80,7 +80,7 @@ def decode_blob(b: bytes) -> dict:
         return {"kind": "point", "pts": [(x, y)], "parts": [0], "z": None}
     if len(b) == 4 + 24:
         x, y, z = struct.unpack_from("<3d", b, 4)
-        return {"kind": "point", "pts": [(x, y)], "parts": [0], "z": [z]}
+        return {"kind": "point", "pts": [(x, y)], "parts": [0], "z": [z] if hasz else None}
     off = 4
     struct.unpack_from("<4d", b, off)          # bbox（信息项，跳过）
     off += 32
@@ -94,8 +94,8 @@ def decode_blob(b: bytes) -> dict:
     off += 16 * numpoints
     pts = [(flat[2 * i], flat[2 * i + 1]) for i in range(numpoints)]
     zs = None
-    # 3D：[Zmin,Zmax][Z×numpoints]（实测线层验证）
-    if len(b) - off >= 16 + 8 * numpoints:
+    # 3D：[Zmin,Zmax][Z×numpoints]（实测线层验证，仅 hasz 时提取 Z，避免 M 误当 Z）
+    if hasz and len(b) - off >= 16 + 8 * numpoints:
         off += 16
         zs = list(struct.unpack_from(f"<{numpoints}d", b, off))
     return {"kind": "poly", "pts": pts, "parts": parts, "z": zs}
@@ -181,6 +181,7 @@ def transform_pgdb(mdb_path, out_dir, planar_fn=None, height_fn=None,
                 out_shp = Path(str(out_dir)) / f"{stem}_{tbl}_转换后.shp"
                 w = shapefile.Writer(target=str(out_shp), shapeType=st, encoding="utf-8")
                 n_feat = 0
+                cancelled = False
                 try:
                     for i, nm in zip(attr_idx, dbf_names):
                         if all_flds[i].Type in _TEXT_TYPES:
@@ -195,21 +196,20 @@ def transform_pgdb(mdb_path, out_dir, planar_fn=None, height_fn=None,
                         n_rows = len(batch[0])
                         for r in range(len(batch[0])):
                             if cancel is not None and cancel.is_set():
+                                cancelled = True
                                 break
                             raw = batch[shape_idx][r]
                             if raw is None:
                                 res.unsupported[f"{tbl}#{n_feat+1}"] = "空几何"
                                 continue
                             try:
-                                geom = decode_blob(bytes(raw))
+                                geom = decode_blob(bytes(raw), hasz=hasz)
                             except Exception as e:  # noqa: BLE001
                                 res.unsupported[f"{tbl}#{n_feat+1}"] = str(e)
                                 continue
                             pts, zs = geom["pts"], geom["z"]
                             n2 = []
                             for k, (X, Y) in enumerate(pts):
-                                if planar_fn is not None:
-                                    X, Y = planar_fn(X, Y)
                                 z = None
                                 if zs is not None:
                                     z = float(zs[k])
@@ -217,6 +217,8 @@ def transform_pgdb(mdb_path, out_dir, planar_fn=None, height_fn=None,
                                         z_new, _v, _d = height_fn(X, Y, z)
                                         if z_new is not None:
                                             z = float(z_new)
+                                if planar_fn is not None:
+                                    X, Y = planar_fn(X, Y)
                                 n2.append([float(X), float(Y)] + ([z] if z is not None else []))
                             attrs = [batch[i][r] for i in attr_idx]
                             if base == 1:
@@ -235,11 +237,20 @@ def transform_pgdb(mdb_path, out_dir, planar_fn=None, height_fn=None,
                         if n_rows < 2000:
                             break
                 finally:
-                    w.close()
+                    try:
+                        w.close()
+                    except Exception:
+                        pass
+                    if cancelled:
+                        for ext in (".shp", ".shx", ".dbf", ".cpg"):
+                            out_shp.with_suffix(ext).unlink(missing_ok=True)
                     try:
                         rs.Close()
                     except Exception:  # noqa: BLE001
                         pass
+                if cancelled:
+                    res.skipped = res.total - res.transformed
+                    return res
                 res.features += n_feat
                 res.transformed += 1
                 res.out_paths.append(str(out_shp))

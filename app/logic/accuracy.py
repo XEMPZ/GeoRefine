@@ -51,8 +51,8 @@ def load_pairs(path) -> PairSet:
             dst_h=np.array([q.h_normal for q in pts], dtype=float),
             src_kind="lonlat", dst_kind="planar",
             source="手簿 .cot（源=GNSS 大地坐标，目标=施工平面坐标）",
-            plane_idx=[i for i, q in enumerate(pts) if q.use_pos] or None,
-            h_idx=[i for i, q in enumerate(pts) if q.use_h] or None)
+            plane_idx=[i for i, q in enumerate(pts) if q.use_pos],
+            h_idx=[i for i, q in enumerate(pts) if q.use_h])
     if pair_io.looks_like_cass(p):
         pairs = pair_io.parse_cass(p)
         if not pairs:
@@ -79,16 +79,23 @@ def load_pairs(path) -> PairSet:
             source="南方坐标转换软件公共点对文件（旧x,y,h → 新x,y,h）")
     # 对比点 CSV：点名,经度,纬度,H_ell,H_normal
     rows = read_points_csv(str(p))
-    pts = [(r.get("name"), float(r["L"]), float(r["B"]), float(r["H_ell"]), float(r["H"]))
-           for r in rows if r.get("L") is not None and r.get("B") is not None]
-    if not pts:
+    csv_pts = []
+    for r in rows:
+        if r.get("L") is not None and r.get("B") is not None:
+            hn = r.get("H") if r.get("H") is not None else r.get("h_normal")
+            if hn is None and r.get("h") is not None:
+                hn = r.get("h")
+            he = r.get("H_ell")
+            if hn is not None and he is not None:
+                csv_pts.append((r.get("name"), float(r["L"]), float(r["B"]), float(he), float(hn)))
+    if not csv_pts:
         raise ValueError("CSV 中没有有效对比点（需列：点名,经度(L),纬度(B),H_ell,H_normal）")
     return PairSet(
-        names=[n or f"P{i+1}" for i, (n, _l, _b, _he, _hn) in enumerate(pts)],
-        src=np.array([[l, b] for _n, l, b, _he, _hn in pts], dtype=float),
-        src_h=np.array([he for _n, _l, _b, he, _hn in pts], dtype=float),
+        names=[n or f"P{i+1}" for i, (n, _l, _b, _he, _hn) in enumerate(csv_pts)],
+        src=np.array([[l, b] for _n, l, b, _he, _hn in csv_pts], dtype=float),
+        src_h=np.array([he for _n, _l, _b, he, _hn in csv_pts], dtype=float),
         dst=None,
-        dst_h=np.array([hn for _n, _l, _b, _he, hn in pts], dtype=float),
+        dst_h=np.array([hn for _n, _l, _b, _he, hn in csv_pts], dtype=float),
         src_kind="lonlat", dst_kind=None,
         source="对比点 CSV（源=大地坐标+大地高，目标=正常高；仅高程对比）")
 
@@ -143,7 +150,7 @@ def evaluate(pairs: PairSet, doc: dict, do_plane: bool, do_height: bool,
         elif pairs.dst_kind == "planar" and doc.get("target_kind") != "planar":
             notes.append("参数不含到平面坐标的转换")
         else:
-            idx = pairs.plane_idx or list(range(len(pairs.src)))
+            idx = pairs.plane_idx if pairs.plane_idx is not None else list(range(len(pairs.src)))
             res, used, fails = [], 0, 0
             for i in idx:
                 try:
@@ -176,9 +183,28 @@ def evaluate(pairs: PairSet, doc: dict, do_plane: bool, do_height: bool,
     # ---- 高程残差 ----
     if do_height:
         hf = doc.get("heightfit")
+        poly = doc.get("poly") or doc.get("polynomial")
+        is_poly3d = bool(poly and poly.get("ndim") == 3)
         has_grid = bool(doc.get("geoid_grid")) and grid is not None
         if doc.get("geoid_grid") and grid is None:
             notes.append(f"格网模型“{doc['geoid_grid']}”不可用，高程无法按该参数计算")
+        elif is_poly3d:
+            from app.logic.polynomial import PolyModel, eval_poly
+            pm = PolyModel.from_doc(poly)
+            res_h = []
+            idx = pairs.h_idx if pairs.h_idx is not None else list(range(len(pairs.src)))
+            if len(idx) == 0:
+                notes.append("点对中无参与高程计算的点（已被全部取消勾选）")
+            else:
+                for i in idx:
+                    s_pt = [pairs.src[i, 0], pairs.src[i, 1]] + ([pairs.src_h[i]] if pairs.src_h is not None else [0.0])
+                    pred = eval_poly(s_pt, pm)
+                    res_h.append(pred[2] - pairs.dst_h[i])
+                r = np.array(res_h, dtype=float)
+                row.update(feasible_h=True, n_h=len(r), res_h=r, fails_h=0,
+                           rms_h=float(np.sqrt(np.mean(r ** 2))) if len(r) else 0.0,
+                           mean_h=float(np.mean(np.abs(r))) if len(r) else 0.0,
+                           max_h=float(np.max(np.abs(r))) if len(r) else 0.0)
         elif hf:
             space = hf.get("space", "planar")
             if space != pairs.src_kind:
@@ -186,7 +212,7 @@ def evaluate(pairs: PairSet, doc: dict, do_plane: bool, do_height: bool,
             elif pairs.dst_h is None:
                 notes.append("点对文件无目标高程")
             else:
-                idx = pairs.h_idx or list(range(len(pairs.src)))
+                idx = pairs.h_idx if pairs.h_idx is not None else list(range(len(pairs.src)))
                 res, used, fails = [], 0, 0
                 for i in idx:
                     try:
@@ -222,7 +248,7 @@ def evaluate(pairs: PairSet, doc: dict, do_plane: bool, do_height: bool,
             elif pairs.dst_h is None:
                 notes.append("点对文件无目标高程")
             else:
-                idx = pairs.h_idx or list(range(len(pairs.src)))
+                idx = pairs.h_idx if pairs.h_idx is not None else list(range(len(pairs.src)))
                 res, used, fails = [], 0, 0
                 for i in idx:
                     xi = grid.try_undulation(float(pairs.src[i, 0]), float(pairs.src[i, 1]))

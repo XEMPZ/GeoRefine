@@ -283,3 +283,24 @@ def test_cp_export_button(tmp_path):
     back = pair_io.parse_south_pairs(str(out))
     assert len(back) == 3
     assert back[0].name == "K1" and abs(back[0].y2 - 1988.4) < 1e-3
+
+
+def run() -> int:
+    """供 run_tests.py 调用的统一入口。"""
+    import inspect
+    import shutil
+    import tempfile
+    fns = [f for n, f in inspect.getmembers(sys.modules[__name__], inspect.isfunction) if n.startswith("test_")]
+    count = 0
+    for fn in fns:
+        sig = inspect.signature(fn)
+        if "tmp_path" in sig.parameters:
+            td = Path(tempfile.mkdtemp(prefix="test_tmp_"))
+            try:
+                fn(td)
+            finally:
+                shutil.rmtree(td, ignore_errors=True)
+        else:
+            fn()
+        count += 1
+    return count

@@ -179,6 +179,7 @@ def write_like(src_info: LasInfo, dst_path, chunks, *, progress=None):
 
     with laspy.open(str(src_info.path)) as sh:
         src_header = sh.header
+        evlrs = getattr(sh, "evlrs", None)
 
     # 关键：**直接沿用源头的头对象**，而不是照 point_format.id 新建。
     # 原因：扫描仪导出的合并文件会带**自定义维度**（如 "Original cloud index"），
@@ -196,8 +197,22 @@ def write_like(src_info: LasInfo, dst_path, chunks, *, progress=None):
     n_total = 0
     mn = None
     mx = None
+    import itertools
+    # 窥探首块坐标：若相对当前 offset 超过 32 位有符号整型上限 (约 2e9 raw units)，
+    # 自动重置 offset 为当前坐标量级，彻底杜绝整数溢出崩溃
+    chunk_iter = iter(chunks)
+    first_chunk = next(chunk_iter, None)
+    if first_chunk is not None:
+        pts0 = first_chunk[1]
+        sc = np.array(new_header.scales, dtype=float)
+        off = np.array(new_header.offsets, dtype=float)
+        p0 = np.array([float(pts0.x[0]), float(pts0.y[0]), float(pts0.z[0])])
+        if np.any(np.abs((p0 - off) / sc) > 1.8e9):
+            new_header.offsets = [round(float(p0[0])), round(float(p0[1])), round(float(p0[2]))]
+        chunk_iter = itertools.chain([first_chunk], chunk_iter)
+
     with laspy.open(str(dst), mode="w", header=new_header) as w:
-        for _idx, pts in chunks:
+        for _idx, pts in chunk_iter:
             # 写入：laspy 按 scale/offset 把浮点世界坐标反算为整数存储
             w.write_points(pts)
             n_total += len(pts)
@@ -210,6 +225,8 @@ def write_like(src_info: LasInfo, dst_path, chunks, *, progress=None):
             mx = bmx if mx is None else np.maximum(mx, bmx)
             if progress:
                 progress(n_total)
+        if evlrs is not None and len(evlrs) > 0:
+            w.write_evlrs(evlrs)
     return (n_total,
             tuple(float(v) for v in (mn if mn is not None else (0.0, 0.0, 0.0))),
             tuple(float(v) for v in (mx if mx is not None else (0.0, 0.0, 0.0))))

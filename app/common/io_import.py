@@ -32,17 +32,34 @@ def _decode(path: Path) -> str:
 def _split_line(ln: str, delim: str | None) -> list[str]:
     if delim is None:  # 连续空白（空格/制表符混排）
         return ln.split()
-    cells = [c.strip().strip('"').strip("'") for c in ln.split(delim)]
-    while cells and cells[-1] == "":
-        cells.pop()
-    return cells
+    import csv
+    try:
+        reader = csv.reader([ln], delimiter=delim, skipinitialspace=True)
+        cells = [c.strip() for c in next(reader)]
+        while cells and cells[-1] == "":
+            cells.pop()
+        return cells
+    except Exception:
+        cells = [c.strip().strip('"').strip("'") for c in ln.split(delim)]
+        while cells and cells[-1] == "":
+            cells.pop()
+        return cells
 
 
 def _detect_delim(lines: list[str]) -> str | None:
+    import csv
     for cand in (",", "\t", ";"):
-        counts = [ln.count(cand) for ln in lines]
-        if min(counts) >= 1 and len(set(counts)) == 1:
-            return cand
+        try:
+            cell_counts = []
+            for ln in lines:
+                row = next(csv.reader([ln], delimiter=cand, skipinitialspace=True))
+                cell_counts.append(len(row))
+            if cell_counts and min(cell_counts) >= 2 and len(set(cell_counts)) == 1:
+                return cand
+        except Exception:
+            counts = [ln.count(cand) for ln in lines]
+            if min(counts) >= 1 and len(set(counts)) == 1:
+                return cand
     return None  # 连续空白
 
 
@@ -89,9 +106,10 @@ def _read_xlsx_rows(path: Path) -> tuple[list[list[str]], list[int]]:
 
 def _is_float(s: str) -> bool:
     try:
-        float(s)
-        return True
-    except ValueError:
+        import math
+        v = float(s)
+        return math.isfinite(v)
+    except (ValueError, TypeError):
         return False
 
 

@@ -97,3 +97,24 @@ def test_south_crosscheck_engineering_scale():
     pred = _south_fit_predict(src, dst)
     diff = max(max(abs(np.array(pred(p)) - np.array(eval_poly(p, m)))) for p in src)
     assert diff < 1e-4, diff   # <0.1 mm
+
+
+def run() -> int:
+    """供 run_tests.py 调用的统一入口。"""
+    import inspect
+    import shutil
+    import tempfile
+    fns = [f for n, f in inspect.getmembers(sys.modules[__name__], inspect.isfunction) if n.startswith("test_")]
+    count = 0
+    for fn in fns:
+        sig = inspect.signature(fn)
+        if "tmp_path" in sig.parameters:
+            td = Path(tempfile.mkdtemp(prefix="test_tmp_"))
+            try:
+                fn(td)
+            finally:
+                shutil.rmtree(td, ignore_errors=True)
+        else:
+            fn()
+        count += 1
+    return count

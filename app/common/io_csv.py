@@ -38,11 +38,14 @@ def _detect_encoding(path: Path) -> str:
 
 
 def _split_line(line: str) -> list[str]:
-    if "," in line:
-        return [c.strip() for c in line.split(",")]
-    if "\t" in line:
-        return [c.strip() for c in line.split("\t")]
-    return line.split()
+    import csv
+    delim = "," if "," in line else ("\t" if "\t" in line else None)
+    if delim is None:
+        return line.split()
+    try:
+        return [c.strip() for c in next(csv.reader([line], delimiter=delim, skipinitialspace=True))]
+    except Exception:
+        return [c.strip() for c in line.split(delim)]
 
 
 def _norm(s: str) -> str:

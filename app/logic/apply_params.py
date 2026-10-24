@@ -22,11 +22,13 @@ def apply_points(names, vals_in, param_doc: dict, out_lonlat: bool, src_lonlat: 
         try:
             if kind in ("inv_direct", "inv_chain3", "inv_chain"):
                 # 平面（工程坐标）→ 大地（逆向链）：源投影反算 + 三/七参数
-                b2, l2, h2 = applier.apply_planar_to_lonlat(a1, a2, h)
+                b2, l2, h2 = applier.apply_planar_to_lonlat(a1, a2, h, do_plane=do_plane)
                 o1, o2 = anglefmt.rad_to_dms(b2), anglefmt.rad_to_dms(l2)
                 vals, fmts = [o1, o2, h2], ["%.8f", "%.8f", "%.4f"]
             elif out_lonlat:  # seven / three：BLH → BLH（三维模型，平面高程同时转换）
-                X, Y, Z = geodetic_to_ecef(a1, a2, h, ell)
+                ell_src = applier.ell
+                ell_dst = applier.ell_dst
+                X, Y, Z = geodetic_to_ecef(a1, a2, h, ell_src)
                 if kind == "seven":
                     p7 = Param7(param_doc["seven"]["dx"], param_doc["seven"]["dy"],
                                 param_doc["seven"]["dz"], param_doc["seven"]["rx_s"],
@@ -37,7 +39,7 @@ def apply_points(names, vals_in, param_doc: dict, out_lonlat: bool, src_lonlat: 
                     p3 = Param3(param_doc["three"]["dx"], param_doc["three"]["dy"],
                                 param_doc["three"]["dz"])
                     X2, Y2, Z2 = apply_3param(p3, X, Y, Z)
-                b2, l2, h2 = ecef_to_geodetic(X2, Y2, Z2, ell)
+                b2, l2, h2 = ecef_to_geodetic(X2, Y2, Z2, ell_dst)
                 o1, o2 = anglefmt.deg_to_dms(b2), anglefmt.deg_to_dms(l2)   # ecef_to_geodetic 返回度
                 vals, fmts = [o1, o2, h2], ["%.8f", "%.8f", "%.4f"]
             elif src_lonlat:  # chain74 / direct_gk：大地 → 平面(正常高)

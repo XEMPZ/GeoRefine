@@ -62,14 +62,16 @@ def transform_cass_dat(in_path, out_path, planar_fn=None, height_fn=None,
     res.total = len(rows)
     for r in rows:
         if cancel is not None and cancel.is_set():
-            break
+            res.skipped = res.total - res.transformed
+            return res
         try:
-            x2, y2 = float(r["x"]), float(r["y"])
+            x_src, y_src = float(r["x"]), float(r["y"])
+            x2, y2 = x_src, y_src
             if planar_fn is not None:
-                x2, y2 = planar_fn(float(r["x"]), float(r["y"]))
+                x2, y2 = planar_fn(x_src, y_src)
             r["x"], r["y"] = float(x2), float(y2)
             if height_fn is not None and r["h"] is not None:
-                z_new, _v, _d = height_fn(float(r["x"]), float(r["y"]), float(r["h"]))
+                z_new, _v, _d = height_fn(x_src, y_src, float(r["h"]))
                 if z_new is not None:
                     r["h"] = float(z_new)
             res.transformed += 1
@@ -102,19 +104,17 @@ def transform_generic_points(in_path, out_path, planar_fn=None, height_fn=None,
     if rows:
         arr = np.array([[float(v[0]), float(v[1])] for _n, v in rows])
         kind = detect_coord_kind(arr)
-        if input_lonlat is not None and (kind == "lonlat") != input_lonlat:
-            raise ValueError(
-                ("文件坐标识别为经纬度，但所选平面参数为平面→平面；"
-                 if kind == "lonlat" else
-                 "文件坐标识别为平面坐标，但所选平面参数为大地→平面；")
-                + "请核对参数或数据。")
-        input_lonlat = (kind == "lonlat")
-    if input_lonlat and planar_fn is None:
+        if input_lonlat is True and kind == "planar":
+            raise ValueError("文件坐标识别为平面坐标，但所选平面参数为大地→平面；请核对参数或数据。")
+        if input_lonlat is None:
+            input_lonlat = (kind == "lonlat")
+    if input_lonlat and planar_fn is None and height_fn is None:
         raise ValueError("文件为经纬度坐标，但未选择“大地→平面”参数，无法转换平面")
     out_rows = []
     for i, (name, vals) in enumerate(rows):
         if cancel is not None and cancel.is_set():
-            break
+            res.skipped = res.total - res.transformed
+            return res
         x, y = float(vals[0]), float(vals[1])   # input_lonlat 时 = (经度, 纬度)
         h = float(vals[2]) if len(vals) >= 3 else None
         try:
@@ -143,8 +143,10 @@ def transform_generic_points(in_path, out_path, planar_fn=None, height_fn=None,
         wb.save(out_path)
     else:
         with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
+            import csv
+            writer = csv.writer(f, lineterminator='\n')
             for r in out_rows:
-                f.write(",".join(r) + "\n")
+                writer.writerow(r)
     if notes:
         res.log.append("；".join(notes))
     res.out_path = str(out_path)

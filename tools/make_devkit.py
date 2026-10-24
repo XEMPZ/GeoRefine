@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.2"
+VERSION = "1.3"
 DIST = ROOT / "dist"
 OUT = DIST / f"GeoRefine-开发交接包-v{VERSION}.zip"
 

@@ -179,7 +179,7 @@ class PlanarVertexTransform:
 
         # 大地源参数（chain74/direct_gk）：OSGB 平面顶点 → 源侧经纬度 → 正向链。
         # 反算复用既有的 _poly_src_point（本类唯一实现，含带号剥离/源椭球/投影面高）。
-        if src_lonlat and not (d.get("geoid_grid")):
+        if src_lonlat:
             # 注意：apply() 已把 SRSOrigin 加回，本方法的 pts **就是绝对投影坐标**，
             # 不要再加原点（曾因此双重加原点，偏差 55 m）。
             from app.common.params import ParamApplier
@@ -215,8 +215,8 @@ class PlanarVertexTransform:
             gout = np.empty_like(pts)
             for i in range(pts.shape[0]):
                 xn, ye = to_survey_xy(float(pts[i, 0]), float(pts[i, 1]))
-                gx = float(self.origin[0]) + float(pts[i, 0])     # 绝对东
-                gy = float(self.origin[1]) + float(pts[i, 1])     # 绝对北
+                gx = float(pts[i, 0])     # 绝对东（apply() 已加回 SRSOrigin，pts 即为绝对坐标）
+                gy = float(pts[i, 1])     # 绝对北
                 o1, o2, o3 = ap.apply_planar_at(
                     xn, ye, float(pts[i, 2]), gy, gx,
                     do_plane=self.mode.do_plane, do_height=self.mode.do_height)

@@ -66,12 +66,12 @@ def main(src, dst, params_path):
         nl = "\n" if lines[h].endswith("\n") else ""
         for k in range(h + 1, e):
             mm = F3.match(plain[k])
-            x = float(mm.group(1)) + origin[0]
-            y = float(mm.group(2)) + origin[1]
-            z = float(mm.group(3)) + origin[2]
-            u = a[0][0] * x + a[0][1] * y + a[0][2] * z + b[0] - new_origin[0]
-            v = a[1][0] * x + a[1][1] * y + a[1][2] * z + b[1] - new_origin[1]
-            w = a[2][0] * x + a[2][1] * y + a[2][2] * z + b[2] - new_origin[2]
+            x = float(mm.group(1))
+            y = float(mm.group(2))
+            z = float(mm.group(3))
+            u = a[0][0] * x + a[0][1] * y + a[0][2] * z + b[0]
+            v = a[1][0] * x + a[1][1] * y + a[1][2] * z + b[1]
+            w = a[2][0] * x + a[2][1] * y + a[2][2] * z + b[2]
             out.append(indent + "  " + "%.10f %.10f %.10f" % (u, v, w) + nl)
             nv += 1
         cur = e

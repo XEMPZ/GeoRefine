@@ -1,6 +1,6 @@
 # GeoRefine — 似大地水准面精化与坐标转换软件
 
-**v1.2** · 作者 求道之心 · MIT License · <https://github.com/XEMPZ/GeoRefine>
+**v1.3** · 作者 求道之心 · MIT License · <https://github.com/XEMPZ/GeoRefine>
 
 把 GNSS 大地坐标（B, L, 大地高 H）与工程用的平面坐标（x, y）和正常高 h 打通：
 公共点对一键解算转换参数（自动比选最优方法）→ 批量应用到坐标表、CAD 图、SHP 文件，
