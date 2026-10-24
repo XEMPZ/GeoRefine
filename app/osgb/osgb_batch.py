@@ -9,7 +9,7 @@
 | Windows 侧经 UNC 拷贝进 WSL | 52 s（同样被 DrvFs 惩罚） |
 
 结论：**拷贝与转换都必须由 WSL 自己执行**，且**一次 wsl 调用处理整批**。
-真正干活的脚本是同目录的 \`_wsl_batch.py\` 与 \`_wsl_rewrite.py\`（纯标准库）。
+真正干活的脚本是同目录的 `_wsl_batch.py` 与 `_wsl_rewrite.py`（纯标准库）。
 
 职责边界
 --------

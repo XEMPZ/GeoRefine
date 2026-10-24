@@ -1,6 +1,6 @@
 # GeoRefine — 似大地水准面精化与坐标转换软件
 
-**v1.1** · 作者 求道之心 · MIT License · <https://github.com/XEMPZ/GeoRefine>
+**v1.2** · 作者 求道之心 · MIT License · <https://github.com/XEMPZ/GeoRefine>
 
 把 GNSS 大地坐标（B, L, 大地高 H）与工程用的平面坐标（x, y）和正常高 h 打通：
 公共点对一键解算转换参数（自动比选最优方法）→ 批量应用到坐标表、CAD 图、SHP 文件，
@@ -27,6 +27,15 @@
 | 精度对比 | 两个参数喂同一批点对逐点比残差，量化该用哪个 |
 | 高斯投影换带 / 空间转换 | UTM 尺度、任意带、抵偿投影面、严密/近似工程椭球；XYZ/BLH/xyH 六型互转 |
 | 参数库 / 台账 | 参数 JSON 导入导出、自定义椭球全局可用；操作全程留痕 |
+
+## v1.2 更新
+
+- 所有表格支持 **Ctrl+C 复制**（选中区或整表，制表符分隔，可直接粘进 Excel/WPS）。
+- 修正 18 处计算与流程缺陷：七参数 BLH 输出、平面高程拟合自变量、参数椭球、d.ms 识别、
+  子午线弧长系数、DXF 仅高程模式的实体覆盖、OSGB 退出码与 SRSOrigin 解析、照片批处理完成回调等。
+  逐条证据见 [docs/审查报告-v1.2.md](docs/审查报告-v1.2.md)。
+- 新增崩溃日志：未捕获异常写 `logs/crash_*.log` 并弹窗（打包版无控制台，以前异常无痕）。
+- 文档重写：[用户手册](docs/用户手册.md)、[交接文档](docs/交接文档.md)、[审查报告](docs/审查报告-v1.2.md)。
 
 ## 快速上手
 
@@ -96,5 +105,6 @@ GeoRefine/
 
 - DWG 依赖本机 AutoCAD（COM），无 AutoCAD 时该格式降级提示；
 - 点云转换目前只支持 LAS/LAZ（用 laspy）；E57/PCD 未实现；
+- LAS 1.4 把 CRS 放在 EVLR 时，输出文件的 EVLR 会丢失（坐标本身正确）；
 - 大地水准面格网支持 gtx/tif/csv/zgf/ggf/grd/bin（tif 需 imagecodecs）；EGM 数据再分发条款自行确认（提供下载脚本）；
 - 其余见技术手册 §4。

@@ -48,10 +48,6 @@ def _build_matrix(p: Param4) -> Matrix44:
                      p.b, p.a, 0.0, 0.0,
                      0.0, 0.0, 1.0, 0.0,
                      p.dy, p.dx, 0.0, 1.0])
-    return Matrix44([-p.a, -p.b, 0.0, 0.0,
-                     p.b, p.a, 0.0, 0.0,
-                     0.0, 0.0, 1.0, 0.0,
-                     p.dy, p.dx, 0.0, 1.0])
 
 
 def _apply_height_to_z(height_fn, X, Y, z):
@@ -91,16 +87,20 @@ def transform_dxf(in_path, out_path, planar: Param4 | None = None, height_fn=Non
         dxftype = e.dxftype()
         _bump(before_counts, dxftype)
         try:
+            height_done = False
             if M is not None and dxftype == "INSERT":
                 _transform_insert(e, planar, height_fn)   # INSERT 拒绝非严格正交矩阵，走专用分支
+                height_done = height_fn is not None
             elif M is not None and dxftype == "CIRCLE":
                 _transform_circle_like(e, planar, height_fn, is_arc=False)  # OCS 实体走专用分支，避免镜像路径
+                height_done = height_fn is not None
             elif M is not None and dxftype == "ARC":
                 _transform_circle_like(e, planar, height_fn, is_arc=True)
+                height_done = height_fn is not None
             elif M is not None:
                 e.transform(M)
-            # 高程处理
-            if height_fn is not None and dxftype not in ("INSERT", "CIRCLE", "ARC"):
+            # 高程处理：平面分支已经写过高程的实体在上一段完成，其余在这里补
+            if height_fn is not None and not height_done:
                 _apply_height(e, dxftype, height_fn, apply_2d_elevation)
             _bump(after_counts, dxftype)
             result.transformed += 1
@@ -180,12 +180,16 @@ def _apply_height(e, dxftype: str, height_fn, apply_2d: bool):
         z = hz(p.x, p.y, p.z)
         if z is not None:
             e.dxf.location = p.replace(z=z)
+    elif dxftype == "INSERT":
+        p_ins = e.dxf.get("insert")
+        z = hz(p_ins.x, p_ins.y, p_ins.z)
+        if z is not None:
+            e.dxf.insert = p_ins.replace(z=z)
     elif dxftype in ("CIRCLE", "ARC"):
         c = e.dxf.get("center")
-        if c.z != 0.0 or True:
-            z = hz(c.x, c.y, c.z)
-            if z is not None:
-                e.dxf.center = c.replace(z=z)
+        z = hz(c.x, c.y, c.z)
+        if z is not None:
+            e.dxf.center = c.replace(z=z)
     elif dxftype in ("TEXT", "MTEXT"):
         p_ins = e.dxf.get("insert")
         z = hz(p_ins.x, p_ins.y, p_ins.z)

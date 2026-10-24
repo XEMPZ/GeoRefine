@@ -113,7 +113,7 @@ def parse_cass(path: str | Path) -> list[CassPair]:
             b.append(0.0)
         out.append(CassPair(a[0], a[1], a[2], b[0], b[1], b[2]))
     if not out:
-        raise ValueError(f"CASS 公共点文件无有效数据行：{p}")
+        raise ValueError(f"CASS 公共点文件无有效数据行：{path}")
     return out
 
 

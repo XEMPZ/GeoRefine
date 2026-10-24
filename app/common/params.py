@@ -501,7 +501,7 @@ class ParamApplier:
                 if space == "lonlat":
                     v = None if s_b is None else self._eval_hf(s_l, s_b)
                 else:
-                    v = self._eval_hf(x2, y2)
+                    v = self._eval_hf(x, y)   # 拟合自变量是源坐标，不是四/七参数算完的目标坐标
                 if v is not None:
                     h2 = h2 - v if self.hf.get("value_type", "xi") == "xi" else h2 + v
         return x2, y2, h2

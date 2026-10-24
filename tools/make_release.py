@@ -2,8 +2,8 @@
 """组装 GeoRefine 免安装版发布包。
 
 产出：
-    dist/GeoRefine-免安装版-v1.1/      —— 整目录（可直接运行）
-    dist/GeoRefine-免安装版-v1.1.zip   —— 发布用压缩包
+    dist/GeoRefine-免安装版-v1.2/      —— 整目录（可直接运行）
+    dist/GeoRefine-免安装版-v1.2.zip   —— 发布用压缩包
 
 结构：
     GeoRefine.exe        双击运行（无需 Python）
@@ -27,7 +27,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.1"
+VERSION = "1.2"
 NAME = "GeoRefine-免安装版-v" + VERSION
 DIST = ROOT / "dist"
 BUILT = DIST / "GeoRefine"

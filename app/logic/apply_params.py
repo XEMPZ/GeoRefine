@@ -38,7 +38,7 @@ def apply_points(names, vals_in, param_doc: dict, out_lonlat: bool, src_lonlat: 
                                 param_doc["three"]["dz"])
                     X2, Y2, Z2 = apply_3param(p3, X, Y, Z)
                 b2, l2, h2 = ecef_to_geodetic(X2, Y2, Z2, ell)
-                o1, o2 = anglefmt.rad_to_dms(b2), anglefmt.rad_to_dms(l2)
+                o1, o2 = anglefmt.deg_to_dms(b2), anglefmt.deg_to_dms(l2)   # ecef_to_geodetic 返回度
                 vals, fmts = [o1, o2, h2], ["%.8f", "%.8f", "%.4f"]
             elif src_lonlat:  # chain74 / direct_gk：大地 → 平面(正常高)
                 x2, y2, h2 = applier.apply_lonlat(a1, a2, h,

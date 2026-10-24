@@ -48,10 +48,10 @@ def dms_plausible(value: float) -> bool:
     必为十进制度；全部可行时仍存在歧义，由调用方按软件口径/参数溯源决定。
     """
     frac = abs(value) % 1.0
-    mm = int(frac * 100)
+    mm = int(frac * 100 + 1e-9)
     if mm >= 60:
         return False
-    ss = int(round((frac * 100 - mm) * 100))
+    ss = int(round((frac * 100 + 1e-9 - mm) * 100))
     return ss < 60
 
 
@@ -103,12 +103,20 @@ def parse_flexible(text: str, unit: str = "dms") -> float:
 
 
 def fmt_dms(rad: float, sec_digits: int = 4) -> str:
-    """弧度 → 人类可读字符串 30°26′34.5678″。"""
-    v = rad_to_dms(rad)
-    sign = "-" if v < 0 else ""
-    v = abs(v)
-    d = int(v)
-    mm = int(round((v - d) * 100.0))
-    sec = (v - d) * 100.0 - mm
-    sec *= 100.0  # 秒
+    """弧度 → 人类可读字符串 30°26′34.5678″。
+
+    直接从总角秒分解：d.ms 编码的百分位舍入会把 59′59″ 显示成 60′−41″。
+    """
+    total = abs(rad) * 648000.0 / math.pi      # 总角秒
+    d = int(total // 3600.0)
+    rem = total - d * 3600.0
+    mm = int(rem // 60.0)
+    sec = round(rem - mm * 60.0, sec_digits)
+    if sec >= 60.0:                            # 入格后进位
+        sec -= 60.0
+        mm += 1
+    if mm >= 60:
+        mm -= 60
+        d += 1
+    sign = "-" if rad < 0 else ""
     return f"{sign}{d}°{mm:02d}′{sec:0{3 + sec_digits}.{sec_digits}f}″"

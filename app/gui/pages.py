@@ -8,8 +8,8 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import QObject, QEvent, Qt
-from PySide6.QtGui import QColor, QPainter, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
+from PySide6.QtGui import QColor, QPainter, QFont, QKeySequence
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QFrame, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
                                QLineEdit, QListWidget, QMessageBox, QProgressBar, QPushButton,
                                QRadioButton, QSpinBox, QTableWidget, QTableWidgetItem, QTextEdit,
@@ -175,11 +175,14 @@ class _TableReceptor(QObject):
         t = self.table
         menu = QMenu(t)
         act_del = menu.addAction("删除选中行")
+        act_copy = menu.addAction("复制选中单元格")
         act_paste = menu.addAction("从剪贴板粘贴")
         act_clear = menu.addAction("清空表格")
         act = menu.exec(global_pos)
         if act is act_del:
             self.delete_selected_rows()
+        elif act is act_copy:
+            getattr(self.table, "copy_to_clipboard", lambda: None)()
         elif act is act_paste:
             self.paste_clipboard()
         elif act is act_clear:
@@ -197,6 +200,59 @@ def _enable_enter_add(table, page=None):
     table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed |
                           QAbstractItemView.SelectedClicked | QAbstractItemView.AnyKeyPressed)
     return f
+
+
+class _CopyTable(QTableWidget):
+    """表格通用增强：Ctrl+C（或 Ctrl+Insert）复制选中单元格，无选中则复制整表。
+
+    导出为制表符分隔文本，可直接粘进 Excel/WPS/记事本。单元格处于编辑态时焦点在
+    编辑框上，Ctrl+C 由编辑框自己处理，不会被这里截走。
+    """
+
+    def keyPressEvent(self, ev):  # noqa: N802
+        if ev.matches(QKeySequence.StandardKey.Copy) or (
+                ev.key() == Qt.Key_Insert and ev.modifiers() & Qt.ControlModifier):
+            self.copy_to_clipboard()
+            ev.accept()
+            return
+        super().keyPressEvent(ev)
+
+    def contextMenuEvent(self, ev):  # noqa: N802
+        # CustomContextMenu 策略（输入表）走 _TableReceptor 的菜单，这里只兜底只读表
+        if self.contextMenuPolicy() != Qt.DefaultContextMenu:
+            super().contextMenuEvent(ev)
+            return
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        act_copy = menu.addAction("复制选中单元格")
+        act_all = menu.addAction("全选")
+        act = menu.exec(ev.globalPos())
+        if act is act_copy:
+            self.copy_to_clipboard()
+        elif act is act_all:
+            self.selectAll()
+
+    def copy_to_clipboard(self) -> str:
+        """选区（无选区时整表）按行列导出为制表符分隔文本并写入剪贴板。"""
+        idx = list(self.selectedIndexes())
+        if idx:
+            r0 = min(i.row() for i in idx)
+            r1 = max(i.row() for i in idx)
+            c0 = min(i.column() for i in idx)
+            c1 = max(i.column() for i in idx)
+        else:
+            r0, r1, c0, c1 = 0, self.rowCount() - 1, 0, self.columnCount() - 1
+        rows = []
+        for r in range(r0, r1 + 1):
+            rows.append([(self.item(r, c).text() if self.item(r, c) else "").replace("\t", " ")
+                         for c in range(c0, c1 + 1)])
+        while rows and not any(v.strip() for v in rows[-1]):
+            rows.pop()   # 末尾的空行（输入表通常留一行）不带走
+        text = "\n".join("\t".join(row) for row in rows)
+        if text.strip():
+            QApplication.clipboard().setText(text)
+        return text
+
 
 
 def _sync_ell_fields(page):
@@ -275,7 +331,7 @@ class HomePage(QWidget):
 
         head = QLabel(
             "<b style='font-size:15pt;color:#2a6f8e'>GeoRefine — 似大地水准面精化与坐标转换软件</b>"
-            "<span style='color:#6b7a83'>　v1.1</span>")
+            "<span style='color:#6b7a83'>　v1.2</span>")
         head.setTextFormat(Qt.RichText)
         v.addWidget(head)
         intro = QLabel(
@@ -422,7 +478,7 @@ class ControlPointPage(QWidget):
         hints2.addStretch(1)
         gv.addLayout(hints2)
         gv.addLayout(btns)
-        self.table = QTableWidget(0, 12)
+        self.table = _CopyTable(0, 12)
         self.table.setHorizontalHeaderLabels(["点名", "源x/L", "源y/B", "源h/H",
                                               "目标x", "目标y", "目标h", "用平面", "用高程",
                                               "x残差(m)", "y残差(m)", "h残差(m)"])
@@ -674,7 +730,7 @@ class ControlPointPage(QWidget):
         opts.setColumnStretch(0, 1)
         opts.setColumnStretch(1, 1)
         gv2.addLayout(opts)
-        self.cmp_table = QTableWidget(0, 8)
+        self.cmp_table = _CopyTable(0, 8)
         self.cmp_table.setHorizontalHeaderLabels(["方法", "可行", "点数", "RMS平面(m)", "RMS高程(m)",
                                                   "LOO高程(m)", "选用", "说明"])
         self.cmp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -988,15 +1044,13 @@ class ControlPointPage(QWidget):
             r = self.table.rowCount()
             self.table.insertRow(r)
             has_bl = p.get("B") is not None and p.get("L") is not None
+            # 目标列优先用表里的 目标x/目标y（x2/y2）；没有才退回源侧值（点对未给目标时）
+            tx = p.get("x2") if p.get("x2") is not None else (p.get("L") if has_bl else p.get("x"))
+            ty = p.get("y2") if p.get("y2") is not None else (p.get("B") if has_bl else p.get("y"))
             vals = [p.get("name"),
                     p.get("L") if has_bl else p.get("x"), p.get("B") if has_bl else p.get("y"),
                     p.get("H_ell") if has_bl else p.get("h"),
-                    p.get("L") if has_bl else p.get("x"), p.get("B") if has_bl else p.get("y"),
-                    p.get("H") if has_bl else p.get("H")]
-            if not has_bl:
-                for j, key in enumerate(("x2", "y2", "H")):
-                    if p.get(key) is not None:
-                        vals[4 + j] = p[key]
+                    tx, ty, p.get("H")]
             for j, val in enumerate(vals):
                 self.table.setItem(r, j, QTableWidgetItem("" if val is None else str(val)))
             self.table.setItem(r, 7, QTableWidgetItem("Y"))
@@ -1422,7 +1476,7 @@ class ControlPointPage(QWidget):
         if not sel and not sel_h:
             _quiet_info(self, "提示", "无可用方法（平面与高程均无可行结果）")
             return
-        r = sel[0] if sel else {"method": "geoid", "n": sel_h.get("n_h", 0),
+        r = sel[0] if sel else {"method": "geoid", "n": sel_h.get("n", sel_h.get("n_h", 0)),
                                 "rms_xy": None, "rms_h": sel_h.get("rms_h"),
                                 "loo_rms_h": sel_h.get("loo_rms_h"), "note": sel_h.get("note", "")}
         m = r["method"]
@@ -1435,7 +1489,8 @@ class ControlPointPage(QWidget):
                 updates, _text = _cp.refit(m, s_used, d_used, self._proj_values(),
                                            getattr(self, "_kind", ("planar", "planar")))
             d = _cp.build_param_doc(name, self._kind, m, updates, getattr(self, "_sel_h", None),
-                                    self._names, self.chk_geoid.isChecked())
+                                    self._names, self.chk_geoid.isChecked(),
+                                        ell_name=self.ell_src_combo.currentText())
             d["accuracy"].update({"rms_xy_m": r.get("rms_xy"), "rms_h_m": r.get("rms_h"),
                                   "loo_rms_h_m": r.get("loo_rms_h"), "n_points": r["n"],
                                   "note": r.get("note", "")})
@@ -1490,6 +1545,12 @@ class PhotoPosPage(QWidget):
         gv2.addWidget(self.xmp_check, 0, 4)
         self.chk_plane = QCheckBox("同时转换平面坐标（需选择含平面转换的参数，默认仅处理高程）")
         gv2.addWidget(self.chk_plane, 1, 0, 1, 5)
+        self.plane_param_combo = QComboBox()
+        self.plane_param_combo.setToolTip("源为大地坐标、且含平面转换的参数（链式/直接投影/七参数等）")
+        self.plane_param_combo.setEnabled(False)
+        gv2.addWidget(QLabel("平面参数"), 2, 0)
+        gv2.addWidget(self.plane_param_combo, 2, 1, 1, 4)
+        self.chk_plane.toggled.connect(self.plane_param_combo.setEnabled)
         v.addWidget(g2)
         g3 = QGroupBox("3. 执行")
         gv3 = QVBoxLayout(g3)
@@ -1510,7 +1571,7 @@ class PhotoPosPage(QWidget):
         gv3.addLayout(r3)
         self.bar = QProgressBar()
         gv3.addWidget(self.bar)
-        self.result_table = QTableWidget(0, 10)
+        self.result_table = _CopyTable(0, 10)
         self.result_table.setHorizontalHeaderLabels(["序号", "文件", "纬度", "经度", "处理前m", "转换值m",
                                                     "处理后m", "转换方式", "状态", "XMP"])
         self.result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -1553,6 +1614,25 @@ class PhotoPosPage(QWidget):
                                     "把全部照片高程统一加/减一个常数（如测区高程异常近似为常数时的简单换算）",
                                     Qt.ToolTipRole)
         self.mode_combo.blockSignals(False)
+        # 平面转换参数下拉：源为大地坐标且含平面转换的参数（首次 __init__ 时控件尚未创建，取 getattr）
+        combo = getattr(self, "plane_param_combo", None)
+        if combo is not None:
+            keep = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            for p_ in lib:
+                try:
+                    d_ = ParamLibrary(PARAMS_DIR).load(p_["name"])
+                except Exception:  # noqa: BLE001
+                    continue
+                if d_.get("source_kind") == "lonlat" and (d_.get("projection") or d_.get("planar4")
+                                                          or d_.get("kind") == "seven2d"):
+                    combo.addItem(d_["name"], d_)
+            if keep:
+                idx = combo.findText(keep)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            combo.blockSignals(False)
 
     def showEvent(self, e):
         """页面显示时刷新参数下拉（参数可能在控制点页/参数库刚保存）。"""
@@ -1709,7 +1789,8 @@ class PhotoPosPage(QWidget):
         self.btn_apply.setEnabled(False)
         self.btn_cancel.setEnabled(False)
         self._fill_result_table(res)
-        _oplog().log("photo_batch", {"root": res["root"], "total": res["total"], "ok": res["ok"],
+        _oplog().log("photo_batch", {"root": res.get("root") or "；".join(res.get("roots") or []),
+                                     "total": res["total"], "ok": res["ok"],
                                      "failed": res["failed"], "skipped": res["skipped"],
                                      "ledger": res["ledger_csv"], "dry_run": res.get("dry_run", False)})
         self.reload_modes()
@@ -1763,8 +1844,8 @@ class OsgbPage(QWidget):
     """OSGB 模型坐标/高程转换页。
 
     设计约束（来自项目契约）：
-      - 转换算法来自已实测的 \`app.osgb\` 模块，不在此重复实现
-      - 实算交给 \`app.osgb.flash\`（内存态 C++ 工具驱动，实测 1537 瓦片 / 23 s）
+      - 转换算法来自已实测的 `app.osgb` 模块，不在此重复实现
+      - 实算交给 `app.osgb.flash`（内存态 C++ 工具驱动，实测 1537 瓦片 / 23 s）
       - SRSOrigin 保持不动：顶点承载世界坐标位移，局部坐标系不变
       - 绝不覆盖输入：输出目录与模型目录相同会被拒绝
     """
@@ -2139,7 +2220,14 @@ class OsgbPage(QWidget):
         if self.param_combo.count() == 0:
             self.param_hint.setText("参数库为空，请先在「参数库」页保存转换参数。")
         else:
+            # 每次刷新都 connect 会让一次切换触发多次 _update_param_hint（每次读盘）
+            if getattr(self, "_param_connected", False):
+                try:
+                    self.param_combo.currentIndexChanged.disconnect(self._on_param_changed)
+                except Exception:  # noqa: BLE001
+                    pass
             self.param_combo.currentIndexChanged.connect(self._on_param_changed)
+            self._param_connected = True
             self._on_param_changed()
 
     def _on_param_changed(self):
@@ -2924,7 +3012,7 @@ class PolyPage(QWidget):
         self.chk_h_none.setToolTip("高程不参与计算，原值透传")
         v.addWidget(hg)
 
-        self.table = QTableWidget(0, 7)
+        self.table = _CopyTable(0, 7)
         self.table.setHorizontalHeaderLabels(_MODEL_HEADERS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -2940,7 +3028,7 @@ class PolyPage(QWidget):
         save_row.addWidget(self.btn_fit)
         v.addLayout(save_row)
 
-        self.res_table = QTableWidget(0, 5)
+        self.res_table = _CopyTable(0, 5)
         self.res_table.setHorizontalHeaderLabels(["点号", "Δx(m)", "Δy(m)", "Δh(m)", "点位残差(m)"])
         self.res_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.res_table.setMinimumHeight(140)
@@ -3322,8 +3410,8 @@ class PolyPage(QWidget):
                 self.res_table.setItem(r_, j, QTableWidgetItem(txt))
         self._model = model
         # 序列化投影（JSON 安全；b0=参与点平均纬度供严密模式复现）
-        b0_s = float(np.mean([p[1] for p in src])) if s_model == "lonlat" else 30.0
-        b0_t = float(np.mean([p[1] for p in dst])) if d_model == "lonlat" else 30.0
+        b0_s = float(np.mean([p[0] for p in src])) if s_model == "lonlat" else 30.0
+        b0_t = float(np.mean([p[0] for p in dst])) if d_model == "lonlat" else 30.0
 
         def _ser(proj, b0, zone):
             if proj["l0"] is None:
@@ -3641,7 +3729,7 @@ class AccuracyPage(QWidget):
         self.lbl_pairs = QLabel("未加载")
         self.lbl_pairs.setObjectName("muted")
         gv1.addWidget(self.lbl_pairs)
-        self.pairs_table = QTableWidget(0, 7)
+        self.pairs_table = _CopyTable(0, 7)
         self.pairs_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.pairs_table.setAlternatingRowColors(True)
         self.pairs_table.setMaximumHeight(170)
@@ -3673,7 +3761,7 @@ class AccuracyPage(QWidget):
         self.verdict.setWordWrap(True)
         self.verdict.setStyleSheet("font-weight:bold; color:#225a75;")
         v.addWidget(self.verdict)
-        self.table = QTableWidget(0, 9)
+        self.table = _CopyTable(0, 9)
         self.table.setHorizontalHeaderLabels(["参数", "点数", "RMS平面(m)", "平均平面(m)", "最大平面(m)",
                                               "RMS高程(m)", "平均高程(m)", "最大高程(m)", "说明"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -4065,7 +4153,7 @@ class LedgerPage(QWidget):
         r.addWidget(self.btn_clear)
         r.addStretch(1)
         v.addLayout(r)
-        self.table = QTableWidget(0, 4)
+        self.table = _CopyTable(0, 4)
         self.table.setHorizontalHeaderLabels(["时间", "操作", "摘要", "详情"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         v.addWidget(self.table, 3)
@@ -4111,7 +4199,7 @@ class LedgerPage(QWidget):
 class HelpPage(QWidget):
     """关于本软件：版本 / 作者 / 许可证 / 技术手册 / 最新版本地址 / BUG 反馈。"""
 
-    VERSION = "1.1"
+    VERSION = "1.2"
     AUTHOR = "求道之心"
     LICENSE = "MIT License"
     REPO_URL = "https://github.com/XEMPZ/GeoRefine"
@@ -4253,7 +4341,7 @@ class GaussPage(QWidget):
         row_bl.addWidget(self.fmt_src_w)
         row_bl.addStretch(1)
         gv3.addLayout(row_bl)
-        self.table_in = QTableWidget(0, 4)
+        self.table_in = _CopyTable(0, 4)
         self.table_in.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         gv3.addWidget(self.table_in, 1)
         io.addWidget(g3, 1)
@@ -4276,7 +4364,7 @@ class GaussPage(QWidget):
         row_bl2.addWidget(self.fmt_dst_w)
         row_bl2.addStretch(1)
         gv4.addLayout(row_bl2)
-        self.table_out = QTableWidget(0, 4)
+        self.table_out = _CopyTable(0, 4)
         self.table_out.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         gv4.addWidget(self.table_out, 1)
         io.addWidget(g4, 1)
@@ -4445,6 +4533,7 @@ class GaussPage(QWidget):
         dst_dms = self.fmt_dst_dms.isChecked()
         self.table_out.setRowCount(0)
         self._result_rows = []
+        bad_h = 0
         for r in range(self.table_in.rowCount()):
             def cell(c, r=r):
                 it = self.table_in.item(r, c)
@@ -4474,7 +4563,11 @@ class GaussPage(QWidget):
                     _quiet_warn(self, "转换失败", f"{name}: {e}")
                 return
             # 高程不参与计算，原值透传（有则输出，无则留空）
-            h_out = ("%.4f" % float(vh)) if vh else ""
+            try:
+                h_out = ("%.4f" % float(vh)) if vh else ""
+            except ValueError:
+                h_out = vh          # 高程不参与换算：非数值原样带出，不中断整批
+                bad_h += 1
             rr = self.table_out.rowCount()
             self.table_out.insertRow(rr)
             self.table_out.setItem(rr, 0, QTableWidgetItem(name))
@@ -4484,6 +4577,9 @@ class GaussPage(QWidget):
             self.table_out.setItem(rr, 2, QTableWidgetItem(s2))
             self.table_out.setItem(rr, 3, QTableWidgetItem(h_out))
             self._result_rows.append([name, s1, s2, h_out])
+        if bad_h and not self._auto:
+            _quiet_warn(self, "高程列已原样保留",
+                        f"有 {bad_h} 行第 4 列不是数值，已按原文输出（高程不参与换算）")
         _oplog().log("zone_transform", {"n": len(self._result_rows),
                                         "src": ("BL:" + ("d.ms" if src_dms else "d")) if src_bl else "xy",
                                         "dst": ("BL:" + ("d.ms" if dst_dms else "d")) if dst_bl else "xy",
@@ -4599,13 +4695,13 @@ class SpacePage(QWidget):
         io = QHBoxLayout()
         g2 = QGroupBox("输入源坐标")
         gv2 = QVBoxLayout(g2)
-        self.table_in = QTableWidget(0, 4)
+        self.table_in = _CopyTable(0, 4)
         self.table_in.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         gv2.addWidget(self.table_in, 1)
         io.addWidget(g2, 1)
         g3 = QGroupBox("输出目标坐标")
         gv3 = QVBoxLayout(g3)
-        self.table_out = QTableWidget(0, 4)
+        self.table_out = _CopyTable(0, 4)
         self.table_out.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         gv3.addWidget(self.table_out, 1)
         io.addWidget(g3, 1)
@@ -4748,17 +4844,32 @@ class SpacePage(QWidget):
     def run(self):
         kind = self._kind()
         src_t, _, dst_t = kind.partition("->")
-        ell = self._current_ell()
-        pj = self._proj()
+        try:
+            ell = self._current_ell()
+            pj = self._proj()
+        except ValueError as e:
+            if not self._auto:
+                _quiet_warn(self, "参数有误", str(e))
+            return
         self.table_out.setRowCount(0)
         self._result_rows = []
-        pts = []
+        # 第三列：XYZ 源的第三列是 Z（必填）；BLH/xyH 源的第三列是大地高，留空按 0 计
+        third_required = src_t == "XYZ"
+        pts, skipped = [], 0
         for r in range(self.table_in.rowCount()):
             cells = [self.table_in.item(r, c).text().strip() if self.table_in.item(r, c) else ""
                      for c in range(4)]
-            if not (cells[1] and cells[2] and cells[3]):
+            if not (cells[1] and cells[2]) or (third_required and not cells[3]):
+                if any(cells):
+                    skipped += 1
                 continue
-            pts.append((cells[0] or f"P{r+1}", cells[1], cells[2], cells[3]))
+            pts.append((cells[0] or f"P{r+1}", cells[1], cells[2], cells[3] or "0"))
+        if not pts:
+            if not self._auto:
+                _quiet_info(self, "提示", "没有可转换的数据：请填写前两列坐标"
+                                        + ("，XYZ 源第三列 Z 不能为空" if third_required
+                                           else "（第三列高程可留空，按 0 计）"))
+            return
         results, err = _spt.convert(pts, src_t, dst_t, ell, pj,
                                     self.fmt_in_dms.isChecked(), self.fmt_out_dms.isChecked())
         for res in results:
@@ -4773,7 +4884,8 @@ class SpacePage(QWidget):
             _quiet_warn(self, "转换失败", f"{err[0]}: {err[1]}")
             return
         _oplog().log("space_transform", {"n": len(self._result_rows), "type": kind,
-                                         "rigorous": pj.rigorous, "h0": pj.h0})
+                                         "rigorous": pj.rigorous, "h0": pj.h0,
+                                         "skipped": skipped})
         self.table_out.resizeColumnsToContents()
 
     def save_result(self):
@@ -4851,13 +4963,13 @@ class ApplyPage(QWidget):
         io = QHBoxLayout()
         g2 = QGroupBox("2. 输入坐标（可从 CSV/TXT 读入）")
         gv2 = QVBoxLayout(g2)
-        self.table_in = QTableWidget(0, 4)
+        self.table_in = _CopyTable(0, 4)
         self.table_in.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         gv2.addWidget(self.table_in, 1)
         io.addWidget(g2, 1)
         g3 = QGroupBox("3. 转换结果")
         gv3 = QVBoxLayout(g3)
-        self.table_out = QTableWidget(0, 4)
+        self.table_out = _CopyTable(0, 4)
         self.table_out.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         gv3.addWidget(self.table_out, 1)
         io.addWidget(g3, 1)

@@ -375,12 +375,15 @@ def geoid_panel_text(grids: list, rows: list[dict]) -> str:
 
 
 def build_param_doc(name: str, kind: tuple[str, str], method: str, updates: dict,
-                    sel_h: dict | None, names: list, use_geoid_flag: bool) -> dict:
+                    sel_h: dict | None, names: list, use_geoid_flag: bool,
+                    ell_name: str = "CGCS2000") -> dict:
     """组装 coordparam/1 参数文档（保存用）。"""
     from datetime import datetime
 
+    # 椭球必须取解算时用的那一颗：应用端（ParamApplier）按本字段取椭球，
+    # 写死 CGCS2000 会让"北京54 解算、CGCS2000 应用"相差 108 m 且毫无提示
     d = {"schema": "coordparam/1", "name": name, "kind": method,
-         "source_kind": kind[0], "target_kind": kind[1], "ellipsoid": "CGCS2000",
+         "source_kind": kind[0], "target_kind": kind[1], "ellipsoid": ell_name,
          "use_geoid": use_geoid_flag, "angle_format": "d",
          "projection": None, "planar4": None, "planar3": None, "seven": None,
          "three": None, "heightfit": None,

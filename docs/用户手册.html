@@ -20,114 +20,190 @@ blockquote{border-left:4px solid #c96f4a;background:#fdf6f0;margin:12px 0;paddin
 ul li{margin:4px 0}
 strong{color:#1e2a32}
 </style></head><body><div class="wrap">
-<div class="meta">GeoRefine v1.0 · 生成于交付打包 · 纸色地图学风格 · 自包含单文件</div>
+<div class="meta">GeoRefine v1.2 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
 <h1>GeoRefine 用户手册</h1>
-<p>似大地水准面精化与坐标转换软件 v1.0</p>
-<h2>1. 安装与启动</h2>
-<p>要求：Windows 10/11，Python 3.10+（建议 3.13）。</p>
-<pre><code class="language-powershell"># 在项目目录 geoid_suite 下
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-python main.py
-</code></pre>
-<p>依赖：PySide6（界面）、numpy（解算）、Pillow + piexif（照片元数据）、ezdxf（DXF）、tifffile + imagecodecs（可选，读 GeoTIFF 格网）。</p>
-<h2>2. 坐标与高程口径（重要）</h2>
-<ul>
-<li>平面坐标 <strong>x=北坐标、y=东坐标</strong>（y 含 500 km 假东偏移），与 GPS 手簿、控制点成果表一致。</li>
-<li>大地坐标 <strong>B=纬度、L=经度</strong>（单位：度）。</li>
-<li>高程：<strong>大地高 H</strong>（椭球面起算，GNSS 直接测得）与<strong>正常高 h</strong>（水准面起算，工程用高程）。
-  高程异常 <strong>ξ = H − h</strong>；软件的高程转换即求 ξ 并做 <strong>正常高 = 大地高 − ξ</strong>。</li>
-</ul>
-<h2>3. 控制点转换页</h2>
-<ol>
-<li>在表格中手动输入控制点对，或点【导入 CSV/TXT】。列格式：<code>点名,源x(或L),源y(或B),源h(或H),目标x(或L),目标y(或B),目标h(或H)</code>，支持 <code>#</code> 注释行、逗号/制表符分隔、UTF-8/GBK 编码。</li>
-<li>点【自动比选并计算】。软件自动识别坐标类型（平面/大地）并计算所有可行方法：</li>
-<li><strong>planar4</strong> 平面四参数（适合小测区，经验上 ≤50 km²）</li>
-<li><strong>seven</strong> 空间七参数·布尔莎（跨基准、大范围）</li>
-<li><strong>chain74</strong> 七参数+高斯投影+四参数（源大地坐标 → 地方平面坐标系，中央子午线自动按 3° 带选取）</li>
-<li><strong>direct_gk</strong> 直接投影基线（用于检查两套坐标是否本就同基准）</li>
-<li>高程方案：固定差 / 平面拟合 / 二次曲面拟合，按<strong>留一交叉验证（LOO）RMS</strong> 自动定阶；拟合面中心点取<strong>最后一个控制点</strong>，与中海达 GNSSTools 手簿口径一致。</li>
-<li>对比表中 ★ 为自动选中方法（RMS 最小）；下方明细区显示参数值与精度。</li>
-<li>输入参数名 →【保存所选方法到参数库】。参数为 JSON 文件，存于 <code>params/</code>，可在照片POS、CAD、精度对比各页直接调用。</li>
-</ol>
-<p>精度说明：RMS 为控制点残差均方根；点数恰好等于参数个数时无检核条件（软件会标注），建议平面 ≥4 点、七参数 ≥4 点、二次曲面 ≥7 点。</p>
-<h2>4. 照片 POS 处理页（核心功能）</h2>
-<ol>
-<li>【选择目录】→【扫描照片】：递归统计目录及<strong>全部子目录</strong>中的 JPG（自动跳过备份目录）。</li>
-<li>选高程转换方式：</li>
-<li><strong>格网模型</strong>：<code>models/</code> 下的大地水准面格网（EGM96 已内置；EGM2008 可下载；可导入局部格网，见 §8）；</li>
-<li><strong>拟合参数</strong>：参数库中带高程拟合（经纬度空间）的参数；</li>
-<li><strong>常数偏移</strong>：统一加一个常数。</li>
-<li>【开始处理】：逐张提取 POS（EXIF GPS 优先，兼容大疆 XMP 的 AbsoluteAltitude/RelativeAltitude），转换高程后<strong>回写 EXIF GPSAltitude</strong>（可选同步更新 XMP）。后台线程执行，进度条实时显示，【取消】随时中止。</li>
-<li>每张照片写前自动备份到 <code>&lt;目录&gt;\_POS备份\</code>（镜像原目录结构，仅首次备份）。台账 CSV（UTF-8-BOM，Excel 可直开）逐张记录：文件、经纬度、处理前椭球高、转换值、处理后高程、状态、备份路径。</li>
-<li>【从备份回滚】：从 <code>_POS备份</code> 一键还原全部照片。</li>
-</ol>
-<p>状态说明：<code>ok</code> 成功；<code>no_pos</code> 照片无 GPS 元数据；<code>out_of_range</code> 位置超出格网覆盖；<code>write_failed</code> 写入失败；<code>skipped</code> 用户取消。照片影像像素不会被修改，仅元数据。</p>
-<blockquote>
-<p>EXIF 高程按 1 cm 栅格存储（rational 分母 100），台账中记录的是全精度值。</p>
-</blockquote>
-<h2>5. CAD 转换页</h2>
-<ol>
-<li>【选择文件】支持多个 DXF（R12~R2018）。<strong>DWG 需先在 CAD 中另存为 DXF</strong>（软件会自动识别并提示）。</li>
-<li>平面转换：选参数库中的四参数（含"七参数+投影+四参数"链式参数）；可不转平面。</li>
-<li>高程转换：选参数库中的高程拟合参数（平面空间）或常数偏移；可不转高程。<code>2D实体也写高程</code> 选项会对 LWPOLYLINE 写入 elevation。</li>
-<li>【输出目录】→【开始转换】。输出文件名 <code>原名_转换后.dxf</code>，不覆盖原件；报告显示每个文件的实体变换数与未支持类型。</li>
-</ol>
-<p>实体支持：LINE、LWPOLYLINE、POLYLINE(2D/3D)、CIRCLE、ARC、POINT、TEXT、MTEXT、SPLINE、ELLIPSE、3DFACE、SOLID、INSERT（整体变换，块定义不动）、HATCH 等；图层、线型、文字内容、扩展数据全部保留。INSERT/圆弧类实体按"位置+旋转+缩放"精确换算（旋转角随四参数自动叠加，半径随尺度缩放）。</p>
-<h2>6. 精度对比页</h2>
-<ol>
-<li>【加载 CSV】：对比点格式 <code>点名,lon,lat,H_ell,H_normal</code>（<code>sample_data/精度对比样本.csv</code> 为样例）。</li>
-<li>勾选模型列表中的多个大地水准面（EGM96 / EGM2008 / 局部格网…），可再叠加参数库拟合方案。</li>
-<li>【计算对比】：输出每方案的点数、RMS、平均、最大、最小残差，并绘制 RMS 条形图。</li>
-<li>【导出 CSV】/【导出 HTML 报告】：HTML 报告自包含样式，可直接存档或分享。</li>
-</ol>
-<h2>7. 参数库与处理台账</h2>
-<ul>
-<li><strong>参数库页</strong>：查看 JSON 明细、删除、刷新。所有页面共用 <code>params/</code> 目录。</li>
-<li><strong>台账页</strong>：每次参数计算/保存/删除、照片批处理/回滚、CAD 转换、精度报告均写入 <code>logs/operation_log.jsonl</code>（时间、输入、参数、结果），可导出 Excel 兼容 CSV。<strong>全部转换任务可追溯</strong>。</li>
-</ul>
-<h2>8. 大地水准面模型管理</h2>
-<p>软件按扩展名自动识别 <code>models/</code> 下的格网：</p>
-<table>
-<thead>
-<tr>
-<th>格式</th>
-<th>说明</th>
-<th>获取</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>.gtx</code></td>
-<td>PROJ 标准二进制（大端），EGM96 内置（4.2 MB，全球 0.25°）</td>
-<td>随包附带</td>
-</tr>
-<tr>
-<td><code>.tif</code></td>
-<td>GeoTIFF，EGM2008 2.5′（约 80 MB）</td>
-<td><code>python tools/download_geoid_models.py</code>（需 tifffile+imagecodecs）</td>
-</tr>
-<tr>
-<td><code>.csv</code></td>
-<td>文本格网 <code>lon,lat,ξ</code>，规则格网</td>
-<td>局部似大地水准面成果（客户项目常用）</td>
-</tr>
-<tr>
-<td><code>.zgf/.ggf/.grd/.bin</code></td>
-<td>中海达 ZGF / 天宝 GGF / Surfer GRD / Geoid99 二进制</td>
-<td>手簿随机光盘或厂商提供</td>
-</tr>
-</tbody>
-</table>
-<p>导入自定义格网：把文件复制进 <code>models/</code> 后在相关页点【刷新】即可。注意格网覆盖范围，超范围的照片会标记 <code>out_of_range</code>。</p>
-<h2>9. 常见问题</h2>
-<ul>
-<li><strong>界面卡死？</strong> 所有批量任务都在后台线程执行并有进度与取消；如遇极端情况请反馈日志。</li>
-<li><strong>照片 no_pos 多？</strong> 部分无人机未开 GPS 记录，或照片被微信/压缩包转存丢失元数据；用原片。</li>
-<li><strong>ξ 是负数？</strong> 正常，我国大陆 ξ 多在 −40~+20 m 之间（EGM96 下武汉约 −8 m）。</li>
-<li><strong>参数与其他软件不一致？</strong> 四参数平移量与尺度/旋转在数学上强相关，绝对值可能差异较大，但区域内转换结果一致（mm 级），以转换后坐标为准。</li>
-<li><strong>想要 EGMAP/EGM2008 精度更高？</strong> 2.5′ EGM2008 分辨率约 5 km，小测区建议用当地精化格网（CSV/ZGF 导入）或控制点拟合。</li>
-<li><strong>投影适用范围？</strong> 高斯投影 6 阶级数适用于中央子午线 ±1.5° 内（3° 带内，亚毫米级）；离中央子午线更远请换带（软件自动按 3° 带选 L0）或使用"七参数+投影+四参数"链式方案（自动选带）。</li>
-</ul>
-<h2>10. 样例数据</h2>
-<p><code>sample_data/</code> 内置全套可复算样例（控制点对、含 POS 照片、DXF、格网、精度对比点），真值参数见 <code>sample_data/README.md</code>；一键重新生成：<code>python tools/make_sample_data.py</code>。</p>
+<p>似大地水准面精化与坐标转换软件 <strong>v1.2</strong></p>
+<blockquote>本手册按「装上就能用」的顺序写：先看第 3 节五分钟上手，遇到具体功能再翻第 5 节的对应页面。 技术口径（公式、算法依据、数据格式）见同目录《技术手册.md》。</blockquote>
+<hr>
+<h2>1. 这个软件能做什么</h2>
+<p>一个本地运行的测绘计算工具，覆盖「大地坐标 ⇄ 施工平面坐标 ⇄ 模型/照片」这条链路上的常见活。</p>
+<table><thead><tr><th>页面</th><th>一句话</th></tr></thead><tbody>
+<tr><td>首页</td><td>功能导览 + 当前环境自检（模型/参数/台账数量）</td></tr>
+<tr><td>高斯投影换带</td><td>单点的高斯投影正反算与换带（支持 UTM 尺度、加常数、抵偿投影面）</td></tr>
+<tr><td>空间坐标转换</td><td>XYZ / BLH / xyH 六种形式两两互转</td></tr>
+<tr><td>参数应用转换</td><td>用参数库里保存好的参数，批量转换一份坐标清单</td></tr>
+<tr><td>控制点转换</td><td>导入公共点对，自动比选所有可行方案，挑最优的存进参数库</td></tr>
+<tr><td>照片 POS 处理</td><td>把无人机照片里的 POS 大地高换成正常高并写回照片（免相控）</td></tr>
+<tr><td>OSGB 模型转换</td><td>倾斜摄影 OSGB 模型逐顶点坐标/高程转换</td></tr>
+<tr><td>点云模型转换</td><td>LAS/LAZ 点云逐点坐标/高程转换，其它维度原样保留</td></tr>
+<tr><td>多项式转换</td><td>二维/三维多项式拟合（复杂坐标系的补充手段）</td></tr>
+<tr><td>文件转换</td><td>整个文件夹的 CAD（DXF/DWG）、SHP、文本点文件按参数批转</td></tr>
+<tr><td>精度对比</td><td>同一批点对喂给两套参数，逐点比残差，告诉你该用哪个</td></tr>
+<tr><td>参数库</td><td>管理算好的参数与自定义椭球，可导入导出、直接拷贝</td></tr>
+<tr><td>处理台账</td><td>每次计算/回写/转换都留痕，可导出 CSV</td></tr>
+<tr><td>关于本软件</td><td>版本、仓库地址、BUG 反馈</td></tr>
+</tbody></table>
+<p>三条主线：</p>
+<p>1. <strong>单点换算</strong>：换带页 / 空间转换页，贴几个点就算。 2. <strong>批量算参数</strong>：控制点转换页 → 存参数库 → 参数应用 / 照片 / 模型 / 文件转换都用它。 3. <strong>批处理回写</strong>：照片 POS、OSGB、LAS、CAD 四类，都有台账和回滚。</p>
+<hr>
+<h2>2. 安装与启动</h2>
+<h3>2.1 免安装版（推荐给使用者）</h3>
+<p>双击 <code>GeoRefine.exe</code> 即可，无需安装 Python。</p>
+<p>目录结构（<code>dist/GeoRefine-免安装版-v1.2/</code>）：</p>
+<table><thead><tr><th>路径</th><th>作用</th></tr></thead><tbody>
+<tr><td><code>GeoRefine.exe</code></td><td>主程序</td></tr>
+<tr><td><code>_internal/</code></td><td>Python 运行时与依赖（勿删）</td></tr>
+<tr><td><code>models/</code></td><td>大地水准面格网（自带 EGM96，中国区域高精度格网自行放入）</td></tr>
+<tr><td><code>params/</code></td><td>转换参数 JSON（自己算的、别人给的都是 JSON 文件，拷进来即可）</td></tr>
+<tr><td><code>native/</code></td><td>OSGB 原生转换器（勿删；缺了 OSGB 页会提示）</td></tr>
+<tr><td><code>logs/</code></td><td>操作台账 + 崩溃日志</td></tr>
+<tr><td><code>docs/</code></td><td>用户手册、技术手册</td></tr>
+<tr><td><code>src/</code></td><td>完整源代码（可自行修改、可用任何 AI 工具改）</td></tr>
+<tr><td><code>config.json</code></td><td>可选开关（如 <code>enable_poly3d</code>）</td></tr>
+</tbody></table>
+<blockquote>免安装版把 <code>models/ params/ logs/</code> 放在 exe 旁边而不是临时目录，重启后参数库与格网仍在。</blockquote>
+<h3>2.2 源码运行（开发）</h3>
+<pre><code>pip install -r requirements.txt
+python main.py</code></pre>
+<p>依赖：PySide6、numpy、Pillow、piexif、ezdxf、laspy、tifffile + imagecodecs（读 GeoTIFF 格网）、pyproj（仅验证工具用）。</p>
+<h3>2.3 系统要求</h3>
+<p>Windows 10/11 64 位。DWG 转换需要本机装有 AutoCAD（COM 自动化）；OSGB 转换需要 <code>native/osgb_vertex_transform.exe</code> 或 WSL + OpenSceneGraph。</p>
+<hr>
+<h2>3. 五分钟上手</h2>
+<h3>3.1 只算一个点（高斯投影换带）</h3>
+<p>1. 左侧点【高斯投影换带】。 2. 「转换前投影参数」填中央子午线（如 <code>114</code>，d.ms 编码下 114 度就是 114）。 3. 「输入源坐标」选 <strong>大地坐标</strong> + <strong>d 格式</strong>，表格里填 <code>B=25.905919</code>、<code>L=114.973155</code>。 4. 点【转换】，右侧出 x/y；点【保存结果】存 CSV。</p>
+<blockquote>表格里 <strong>回车</strong> 自动增行、<strong>Ctrl+V</strong> 可整块粘 Excel、<strong>Ctrl+C</strong> 可把选区复制回别处。</blockquote>
+<h3>3.2 用一组公共点算参数（控制点转换）</h3>
+<p>1. 点【导入点对文件】（支持 GNSS 手簿 <code>.cot</code>、南方 CASS 点对、CSV/TXT/XLSX）。 2. 确认表里 <strong>源</strong> 与 <strong>目标</strong> 两类坐标都对（源=GNSS 坐标，目标=施工坐标）。 3. 点【计算与比选】，等右侧「方法」表出来，按 RMS 从小到大排。 4. 勾选最合适的那一行 → 点【保存所选方法到参数库】，给它起个名字。</p>
+<h3>3.3 把参数用到照片上（照片 POS 免相控）</h3>
+<p>1. 【照片POS处理】→【添加目录】→【扫描照片】。 2. 「高程转换方式」选刚才存的参数（或格网模型、或常数偏移）。 3. 先点【计算】看预览：每张照片的处理前高程、ξ、处理后高程都在表里，<strong>这一步不写盘</strong>。 4. 确认无误点【开始处理】：首次会在 <code>_POS备份/</code> 保存原图，然后回写 EXIF/XMP。 5. 出问题点【从备份回滚】，照片恢复原样。</p>
+<hr>
+<h2>4. 通用操作</h2>
+<h3>4.1 表格</h3>
+<table><thead><tr><th>操作</th><th>效果</th></tr></thead><tbody>
+<tr><td>回车</td><td>末行按下自动增行并下移</td></tr>
+<tr><td>Delete</td><td>删除选中行</td></tr>
+<tr><td>Ctrl+V</td><td>从剪贴板粘贴（Excel 制表符或空格/逗号分隔都认）</td></tr>
+<tr><td><strong>Ctrl+C</strong></td><td><strong>复制选中单元格；没选中就复制整表；制表符分隔，可直接粘进 Excel</strong></td></tr>
+<tr><td>右键</td><td>输入表：删除选中行 / 复制选中单元格 / 从剪贴板粘贴 / 清空表格；结果表：复制 / 全选</td></tr>
+<tr><td>拖文件进表格</td><td>直接导入该文件（等价于「读入源文件」）</td></tr>
+</tbody></table>
+<h3>4.2 角度格式</h3>
+<p>两个选项，<strong>只影响&quot;含经纬度&quot;的一侧</strong>：</p>
+<ul><li><strong>d 格式（十进制度）</strong>：<code>25.905919</code> 就是 25.905919°。</li><li><strong>d.ms 格式（度.分秒编码，手簿惯例）</strong>：<code>D.MMSSssss</code>，<code>30.26345678</code> = 30°26′34.5678″；分固定两位，秒随输入精度；负角整体取负。</li></ul>
+<p>批量转换页的「自动」模式会按数值结构判断：分/秒位出现 ≥60 的值必是十进制度。</p>
+<blockquote>输入框里也认 <code>30 26 34.5678</code> 这种空格或 °′″ 分隔的写法。</blockquote>
+<h3>4.3 坐标与高程口径</h3>
+<ul><li>平面坐标 <strong>x = 北坐标、y = 东坐标</strong>（y 通常含 500 km 假东、或带号前缀），与手簿/成果表一致。</li><li>大地坐标 <strong>B = 纬度、L = 经度</strong>。</li><li>高程：<strong>大地高 H</strong>（椭球面起算，GNSS 直接给）与<strong>正常高 h</strong>（水准面起算，工程用）。</li></ul>
+<p>高程异常 <strong>ξ = H − h</strong>；高程转换即做 <strong>h = H − ξ</strong>。</p>
+<ul><li>投影参数单位：中央子午线与平均纬度用 <strong>d.ms</strong>；加常数 x0/y0 用 <strong>km</strong>；投影面大地高 h0 用 <strong>m</strong>。</li><li>「严密工程椭球 / 近似工程椭球」：抵偿投影面时长半轴怎么放大——近似 <code>a+h0</code>（行业惯例），严密 <code>a·(1+h0/Ra(B0))</code>。</li></ul>
+<h3>4.4 带号</h3>
+<p>平面 y ≥ 1000 万时按含带号处理：13–23 为 6° 带（L0 = 6n−3），24–45 为 3° 带（L0 = 3n）。其余带号不自动识别，需手填中央子午线。</p>
+<hr>
+<h2>5. 逐页说明</h2>
+<h3>5.1 首页</h3>
+<p>功能导览 + 右上「当前环境」自检：格网数、参数数、台账条数、原生转换器是否存在。点各块的【打开 →】直接跳到对应页。</p>
+<h3>5.2 高斯投影换带</h3>
+<p>单点/小批量的大地 ⇄ 平面换算，或换带（不同中央子午线之间）。</p>
+<p>1. 选椭球（内置 WGS84/CGCS2000/Beijing54/Xian80，或参数库里的自定义椭球）。 2. 「转换前投影参数」：中央子午线、x0、y0、投影面大地高、UTM k、平均纬度（严密模式用）。 3. 「输入源坐标」选 <strong>平面/大地</strong> 与角度格式，填点号与三列坐标。 4. 【转换】→ 右侧结果；【保存结果】导出 CSV。</p>
+<blockquote>源是平面坐标时，软件用「转换前」那套投影参数反算大地坐标，再用「转换后」那套正算——这正是换带的用途。 第 4 列（高程）不参与换算，原值带出；填了非数字也照原样输出并给出提示，不会中断整批。</blockquote>
+<h3>5.3 空间坐标转换</h3>
+<p>XYZ（空间直角）/ BLH（大地）/ xyH（平面+大地高）七种转换类型任选其一：</p>
+<table><thead><tr><th>类型</th><th>用途</th></tr></thead><tbody>
+<tr><td>BLH → BLH</td><td>只是角度表现形式互转（d.ms ⇄ d）</td></tr>
+<tr><td>XYZ → BLH</td><td>三维无约束平差成果转经纬度</td></tr>
+<tr><td>XYZ → xyH</td><td>一步到位到平面</td></tr>
+<tr><td>BLH → XYZ</td><td>反算</td></tr>
+<tr><td>BLH → xyH</td><td>最常用：GNSS 坐标 → 施工坐标</td></tr>
+<tr><td>xyH → XYZ / xyH → BLH</td><td>平面成果反算</td></tr>
+</tbody></table>
+<p>输入三列：点号 + 两个必需列 + 第三列。<strong>源为 BLH/xyH 时第三列是大地高，可留空（按 0 计）</strong>；源为 XYZ 时第三列是 Z，必须填。</p>
+<h3>5.4 参数应用转换</h3>
+<p>拿参数库里的参数批量转换坐标。</p>
+<p>1. 「选择参数」下拉选一个（旁边有刷新 / 打开参数文件夹 / 删除）。 2. 表格按参数期望的源类型自动改表头；可直接粘贴或【读入源文件】。 3. 勾选「转换平面坐标 / 转换高程」决定转哪几样；「自动识别」判断源是大地还是平面。 4. 【转换】→ 结果表；【保存结果】导出。</p>
+<h3>5.5 控制点转换（算参数的地方）</h3>
+<p>1. <strong>导点对</strong>：支持 <code>.cot</code>（GNSS 手簿点校正）、南方 CASS 公共点、南方坐标转换软件点对、CSV/TXT/XLSX。 列序：<code>点名,源x(或L),源y(或B),源h(或H),目标x,目标y,目标h</code>；「用平面」「用高程」两列决定该点参与哪种解算。 2. <strong>① 椭球与投影参数</strong>：选原始/目标椭球；源是工程平面坐标时填源侧投影（用于反算大地坐标）；目标侧同理。 3. <strong>② 平面转换</strong>：勾选允许参与比选的方法——四参数、三参数、七参数（源为大地坐标时自动走「七参数+投影+四参数」的链式）、同椭球高精度二维。 4. <strong>③ 高程转换</strong>：同椭球高精度大地高↔正常高、平面拟合、曲面拟合、大地水准面模型（可与拟合串联：ξ = 格网 + 残差趋势）。 5. 点【计算与比选】：右侧表列出所有可行方法的点数、RMS 平面/高程、LOO 高程，按精度排序。 6. 勾选一行 → 【保存所选方法到参数库】。</p>
+<blockquote>每个环节旁的【计算】按钮只算那一块，用来单独检查。</blockquote>
+<h3>5.6 照片 POS 处理（免相控）</h3>
+<p>把照片 EXIF 的 GPS 大地高换成正常高。</p>
+<p>1. 【添加目录】可加多个 → 【扫描照片】统计张数。 2. 「方式」四选一：格网模型 / 拟合参数 / 常数偏移 /（参数库里的其他高程方式）。 3. 勾选「同时更新 XMP AbsoluteAltitude」同步 DJI 的 XMP 高度； 勾选「同时转换平面坐标」并选「平面参数」，可把经纬度同时算成地方平面坐标写进台账。 4. 【计算】= 预览（不写盘）；【开始处理】= 真写盘。 5. 结果表逐张显示 处理前 / ξ / 处理后 / 状态（ok、no_pos、out_of_range、write_failed、预览）。</p>
+<p>安全机制：首次处理时把原图复制到 <code>_POS备份/</code>（保持相对路径），之后不再覆盖备份；【从备份回滚】可整目录还原。每次处理写一份 <code>POS处理台账_时间.csv</code>。</p>
+<h3>5.7 OSGB 模型转换</h3>
+<p>倾斜摄影模型逐顶点的坐标/高程转换，SRSOrigin 语义保持不变（顶点承载世界坐标位移），转换后的模型可直接在原有引擎里加载。</p>
+<p>1. 「模型目录」选 <code>Data</code> 那层（含 <code>metadata.xml</code>），「输出目录」另选一个（<strong>不允许与模型目录相同</strong>）。 2. 「参数」选参数库里的；「转换内容」勾平面/高程。 3. 「源侧投影」：平面坐标含带号、或参数没配源侧投影时必填，可点【从模型自动识别】读 metadata。 4. 「高级」：线程数、输出编码（压缩 ~0.8–1.7× / 仅几何压缩 / 不压缩 ~3.8×）。 5. 【检查】自检（原生转换器、瓦片数、参数适用性），再【开始转换】。</p>
+<p>常见失败：原生转换器缺失（<code>native/</code> 没了）、模型目录没有 <code>.osgb</code>、参数源类型不符、CAD/系统占用输出目录。失败时不会写 metadata.xml，输出目录可直接删掉重来。</p>
+<h3>5.8 点云模型转换</h3>
+<p>LAS/LAZ 逐点转换 X/Y/Z，<strong>强度、回波、分类、GPS 时间、RGB 一律原样保留</strong>。</p>
+<p>1. 选点云目录与输出目录（可勾「递归子目录」）→【扫描】。 2. 选参数、勾转换内容；平面坐标含带号或参数源为大地坐标时填源侧投影（可【从 LAS 头自动识别】）。 3. 【开始转换】。</p>
+<blockquote>已知限制：LAS 1.4 把 CRS 放在 EVLR 时，输出文件的 EVLR 会丢（坐标本身正确）。</blockquote>
+<h3>5.9 多项式转换</h3>
+<p>二维/三维多项式拟合（南方口径固定 2 阶；1/3 阶为本软件扩展）。</p>
+<p>1. 导入点对或手填（源 3 列 + 目标 3 列）。 2. 选「二维/三维」与阶数；源/目标是普通平面时填对应坐标系（用于和大地坐标互换）。 3. 「高程处理」可叠加：由多项式第三分量 / 曲面拟合 / 大地水准面模型 / 不计算。 4. 点【拟合并保存到参数库】。</p>
+<h3>5.10 文件转换</h3>
+<p>把整个文件夹的 CAD（DXF/DWG）、SHP、PGDB、文本点文件按参数批量转换。</p>
+<p>1. 【选择文件】或【增加文件夹】（可多次追加，支持子目录扫描）。 2. 「平面参数」「高程方式」（不转换 / 参数 / 常数偏移）。 3. 勾「2D实体也写高程(elevation)」时，二维多段线等按整体高程平移。 4. 【开始转换】→ 逐文件进度，每个文件一行结果。</p>
+<blockquote><strong>DWG 需要本机 AutoCAD</strong>：软件通过 COM 让 AutoCAD 另存为 DXF 再处理。若 AutoCAD/CASS 正忙（执行命令、有模态对话框、正在编辑图纸），会等待约 60 秒后报错——把 CAD 让出来或关掉图纸再试。DXF 不需要 CAD。</blockquote>
+<h3>5.11 精度对比</h3>
+<p>同一批点对喂给两套参数，逐点比残差。</p>
+<p>1. 【导入点对文件】（要有目标坐标）。 2. 选「参数 A」「参数 B」，勾「对比坐标 / 对比高程」。 3. 【计算对比】→ 表格给出两套参数的 RMS、平均、最大值；【导出 CSV】存档。</p>
+<h3>5.12 参数库</h3>
+<p>三块：自定义椭球、坐标转换参数（JSON）、大地水准面文件（<code>models/</code>）。</p>
+<ul><li>【查看 JSON】可直接看到参数结构，方便核对/手改。</li><li>【导入南方方案(.ipj)】把南方 CASS 的方案文件转成软件参数。</li><li>【打开存放文件夹】直接在资源管理器里拷贝——参数是纯 JSON，给别人就是发个文件。</li></ul>
+<h3>5.13 处理台账</h3>
+<p>每次计算、回写、转换都记一行（时间、操作、摘要、详情）。【导出 CSV】存档，【清空记录】清屏（不影响已生成的结果文件）。</p>
+<p>原始台账在 <code>logs/operation_log.jsonl</code>，一行一个 JSON。</p>
+<h3>5.14 关于本软件</h3>
+<p>版本号、GitHub 仓库（源码/发行版/问题反馈）、BUG 邮箱。反馈时请附：操作步骤、数据样例、版本号。</p>
+<hr>
+<h2>6. 参数文件结构（coordparam/1）</h2>
+<p><code>params/某参数.json</code>：</p>
+<pre><code>{
+  &quot;schema&quot;: &quot;coordparam/1&quot;,
+  &quot;name&quot;: &quot;0927_2144_chain74&quot;,
+  &quot;kind&quot;: &quot;chain74&quot;,
+  &quot;source_kind&quot;: &quot;lonlat&quot;,
+  &quot;target_kind&quot;: &quot;planar&quot;,
+  &quot;ellipsoid&quot;: &quot;CGCS2000&quot;,
+  &quot;projection&quot;:   { &quot;l0&quot;: 105.0, &quot;x0&quot;: 0.0, &quot;y0&quot;: 500000.0, &quot;k&quot;: 1.0, &quot;h0&quot;: 0.0, &quot;rigorous&quot;: false, &quot;b0&quot;: 30.0, &quot;zone&quot;: 35, &quot;band&quot;: &quot;3度带&quot; },
+  &quot;projection_src&quot;: { ... },
+  &quot;planar4&quot;: { &quot;dx&quot;: 1234.5, &quot;dy&quot;: -678.9, &quot;a&quot;: 0.99999, &quot;b&quot;: 1e-5 },
+  &quot;seven&quot;:   { &quot;dx&quot;: 1.2, &quot;dy&quot;: -3.4, &quot;dz&quot;: 5.6, &quot;rx_s&quot;: 0.001, &quot;ry_s&quot;: 0.0, &quot;rz_s&quot;: 0.0, &quot;scale_ppm&quot;: -1.2 },
+  &quot;three&quot;:   { &quot;dx&quot;: 1.2, &quot;dy&quot;: -3.4, &quot;dz&quot;: 5.6 },
+  &quot;heightfit&quot;: { &quot;mode&quot;: &quot;plane&quot;, &quot;space&quot;: &quot;planar&quot;, &quot;value_type&quot;: &quot;xi&quot;,
+                 &quot;coef&quot;: [0.0, 0.001, 0.002], &quot;center&quot;: [x0, y0], &quot;loo_rms&quot;: 0.012 },
+  &quot;use_geoid&quot;: false,
+  &quot;accuracy&quot;: { &quot;n_points&quot;: 12, &quot;rms_xy_m&quot;: 0.008, &quot;rms_h_m&quot;: 0.013, &quot;loo_rms_h_m&quot;: 0.015, &quot;note&quot;: &quot;&quot; },
+  &quot;points_used&quot;: [&quot;G1&quot;, &quot;G2&quot;, &quot;...&quot;],
+  &quot;created&quot;: &quot;2026-10-24T16:00:00&quot;
+}</code></pre>
+<ul><li><code>kind</code>：planar4 / planar3 / seven / three / chain74 / direct_gk / seven2d / poly3d / inv_*（逆向链）。</li><li><code>source_kind</code> / <code>target_kind</code>：<code>lonlat</code>（大地）或 <code>planar</code>（工程平面）。</li><li><code>heightfit.value_type</code>：<code>xi</code>（求的是高程异常，h = H − v）或 <code>dh</code>（求的是改正数，h = H + v）。</li><li><code>heightfit.space</code>：<code>planar</code> 用平面坐标拟合，<code>lonlat</code> 用经纬度拟合；<strong>自变量永远是&quot;源&quot;坐标</strong>。</li></ul>
+<hr>
+<h2>7. 大地水准面模型</h2>
+<p>放到 <code>models/</code>，软件按扩展名自动识别：<code>.gtx / .tif / .csv / .zgf / .ggf / .grd</code>。</p>
+<ul><li>免安装版自带 <strong>EGM96（15′）</strong>，精度约 0.5 m 级，够一般工程。</li><li>中国区域高精度格网（省级 CQG/似大地水准面）请自行放入 <code>models/</code>。</li><li><strong>超出格网范围会直接报错拒绝，不做外推</strong>（这是刻意的：外推出来的是假数据）。</li></ul>
+<hr>
+<h2>8. 常见问题</h2>
+<table><thead><tr><th>现象</th><th>原因与处理</th></tr></thead><tbody>
+<tr><td>点按钮完全没反应</td><td>v1.2 起未捕获异常会写 <code>logs/crash_*.log</code> 并弹窗，把日志发我；旧版直接静默</td></tr>
+<tr><td>提示&quot;没有可转换的数据&quot;</td><td>前两列坐标没填；或 XYZ 源第三列 Z 空着</td></tr>
+<tr><td>角度全错（差几十度）</td><td>选了「d 格式」却按 d.ms 输入（或反过来）。看「输入角度格式」</td></tr>
+<tr><td>高程差几十米</td><td>用错了椭球（北京54 算、CGCS2000 用），或高程拟合的坐标系与实际不符</td></tr>
+<tr><td>投影 y 差几十~上百米</td><td>参数没带源侧投影/带号：填中央子午线，或勾&quot;含带号&quot;</td></tr>
+<tr><td>照片处理提示 out_of_range</td><td>照片坐标超出格网覆盖范围</td></tr>
+<tr><td>照片处理要重来</td><td>【从备份回滚】；备份在 <code>_POS备份/</code></td></tr>
+<tr><td>DWG 转换失败</td><td>本机没有 AutoCAD，或 AutoCAD/CASS 正忙；先用 CAD 另存 DXF 也能转</td></tr>
+<tr><td>OSGB 转换&quot;成功但 0 个瓦片&quot;</td><td>v1.2 已改为直接报错；检查模型目录是否含 <code>.osgb</code>、<code>native/</code> 是否在</td></tr>
+<tr><td>参数给别人不生效</td><td>参数是 JSON，直接拷 <code>params/*.json</code>；对方的 <code>models/</code> 要有同名格网</td></tr>
+</tbody></table>
+<p>日志位置：<code>logs/operation_log.jsonl</code>（台账）、<code>logs/crash_*.log</code>（崩溃）。</p>
+<hr>
+<h2>9. 版本记录</h2>
+<table><thead><tr><th>版本</th><th>主要变化</th></tr></thead><tbody>
+<tr><td>v1.2</td><td>全表格 Ctrl+C 复制；修正 18 处计算/流程缺陷（七参数 BLH 输出、平面高程拟合自变量、参数椭球、d.ms 识别、子午线弧长系数、DXF 高程覆盖、OSGB 退出码与 SRSOrigin、照片完成提示等）；新增崩溃日志；用户手册重写</td></tr>
+<tr><td>v1.1</td><td>新增 OSGB 模型转换、点云（LAS/LAZ）转换、多项式转换、精度对比；修复打包版读 tif 格网</td></tr>
+<tr><td>v1.0</td><td>首个可用版本：换带、空间转换、参数应用、控制点比选、照片 POS、文件转换、参数库、台账</td></tr>
+</tbody></table>
+<hr>
+<h2>10. 许可与反馈</h2>
+<p>MIT License，可自由使用/修改/分发。第三方组件许可见 <code>THIRD_PARTY_LICENSES.md</code>。 问题反馈：&lt;https://github.com/XEMPZ/GeoRefine&gt; 或 jewettleah2@gmail.com。</p>
 </div></body></html>

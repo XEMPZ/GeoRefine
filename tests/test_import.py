@@ -41,7 +41,8 @@ def _expected_xyz():
     return [(n, *geodetic_to_ecef(b, l, 100.0, WGS84)) for b, l, n in bls]
 
 
-def _check(rows, expected, named=True, atol=1e-6):
+def _check(rows, expected, named=True, atol=1e-4):
+    # 调用处统一传 atol=1e-4：样例文件坐标只存 5 位小数（≈10 µm），期望值实时重算
     assert len(rows) == 3, f"行数 {len(rows)}"
     for i, (exp, row) in enumerate(zip(expected, rows)):
         name, vals = row
@@ -55,18 +56,19 @@ def _check(rows, expected, named=True, atol=1e-6):
 
 def test_delimiter_variants_xy():
     exp = _expected_xy()
+    # 样例文件坐标只存 5 位小数（≈10 µm），期望值是实时重算的：容差取 0.1 mm
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "01_csv_逗号分隔_有点号", "平面坐标_xy.csv"), 2)
-    _check(rl, exp)
+    _check(rl, exp, atol=1e-4)   # 样例只存 5 位小数（10 µm），期望值实时重算
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "02_txt_空格分隔", "平面坐标_xy.txt"), 2)
-    _check(rl, exp)
+    _check(rl, exp, atol=1e-4)
 
 
 def test_delimiter_variants_blh():
     exp = _expected_blh_dms()
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "01_csv_逗号分隔_有点号", "大地坐标_BLH_dms.csv"), 3)
-    _check(rl, exp)
+    _check(rl, exp, atol=1e-4)
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "03_txt_制表符分隔", "大地坐标_BLH_dms.txt"), 3)
-    _check(rl, exp)
+    _check(rl, exp, atol=1e-4)
 
 
 def test_delimiter_variants_xyz():
@@ -89,7 +91,7 @@ def test_no_name_column():
 def test_header_row_skipped():
     exp = _expected_xy()
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "06_带表头行", "平面坐标_xy_带表头.csv"), 2)
-    _check(rl, exp)
+    _check(rl, exp, atol=1e-4)
     exp3 = _expected_blh_dms()
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "06_带表头行", "大地坐标_BLH_带表头.txt"), 3)
     _check(rl, exp3)
@@ -98,7 +100,7 @@ def test_header_row_skipped():
 def test_xlsx():
     exp = _expected_xy()
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "07_xlsx", "平面坐标_xy.xlsx"), 2)
-    _check(rl, exp)
+    _check(rl, exp, atol=1e-4)
     exp3 = _expected_blh_dms()
     rl, _n = read_points_table(os.path.join(SAMPLE_DIR, "07_xlsx", "大地坐标_BLH_dms.xlsx"), 3)
     _check(rl, exp3)

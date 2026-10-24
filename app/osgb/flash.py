@@ -152,6 +152,7 @@ def run_vertex_transform_batch(binary: str | Path, job_list: str | Path, *,
       - WSL 内路径（经 wsl.exe 调用，自动做路径转换）
     """
     res = FlashResult(threads=threads)
+    rc = None
     bin_s = str(binary)
     be = backend_of(binary)
 
@@ -171,6 +172,7 @@ def run_vertex_transform_batch(binary: str | Path, job_list: str | Path, *,
         except subprocess.TimeoutExpired:
             p.kill()
             out, err = p.communicate()
+        rc = p.returncode
         if cancel():
             res.raw = "已取消"
             res.failures.append("用户取消")
@@ -179,6 +181,7 @@ def run_vertex_transform_batch(binary: str | Path, job_list: str | Path, *,
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                            encoding="utf-8", errors="replace")
         out, err = p.stdout or "", p.stderr or ""
+        rc = p.returncode
     res.raw = (out + err)[-4000:]
     for line in out.splitlines():
         if line.startswith("=== SUMMARY ==="):
@@ -203,7 +206,10 @@ def run_vertex_transform_batch(binary: str | Path, job_list: str | Path, *,
             res.threads = int(num("threads", threads))
             break
     if not res.ok and not res.failed:
-        res.failures.append(res.raw[-300:] or "osgb_vertex_transform 无输出")
+        # 没有 SUMMARY 就是没跑成：C++ 侧空任务返回 2，原生 exe 缺失/参数非法也是非 0；
+        # 以前这里只往 failures 里塞一段文本，GUI 仍弹“转换完成”（成功 0/失败 0）。
+        tail = ((err or out).strip() or res.raw.strip())[-400:]
+        raise RuntimeError(f"osgb_vertex_transform 未返回结果（退出码 {rc}）：{tail or '无输出'}")
     return res
 
 

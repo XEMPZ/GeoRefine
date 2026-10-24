@@ -33,7 +33,9 @@ def convert(points: list[tuple], src_t: str, dst_t: str, ell, pj,
                         float(v3))
             return (float(v1) * math.pi / 180.0, float(v2) * math.pi / 180.0, float(v3))
         if src_t == "XYZ":
-            return ecef_to_geodetic(float(v1), float(v2), float(v3), ell)
+            # ecef_to_geodetic 返回度；本函数内部统一用弧度（fmt_bl 与 pj 都按弧度消费）
+            b_deg, l_deg, h = ecef_to_geodetic(float(v1), float(v2), float(v3), ell)
+            return math.radians(b_deg), math.radians(l_deg), h
         b, l = pj.inverse(float(v1), float(v2))
         return b, l, float(v3)
 

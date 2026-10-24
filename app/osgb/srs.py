@@ -70,15 +70,15 @@ def parse_metadata_xml(text: str) -> SrsInfo:
 
     mo = _ORIGIN_RE.search(text or "")
     if mo:
-        parts = [p.strip() for p in mo.group(1).split(",")]
-        vals: list[float] = []
-        for p in parts[:3]:
-            try:
-                vals.append(float(p))
-            except ValueError:
-                vals.append(0.0)
-        while len(vals) < 3:
-            vals.append(0.0)
+        # 有的导出工具用空格分隔（"595251.0978 2865092.1622 234.955"），两种都收；
+        # 解析失败必须报错——静默置 0 会让 (A−I)·O 那一项把整个模型平移几十米。
+        parts = [p for p in re.split(r"[,\s]+", mo.group(1).strip()) if p]
+        if len(parts) < 3:
+            raise ValueError(f"metadata.xml 的 SRSOrigin 需要 3 个分量，实得 {len(parts)}：{mo.group(1)!r}")
+        try:
+            vals = [float(p) for p in parts[:3]]
+        except ValueError as e:
+            raise ValueError(f"metadata.xml 的 SRSOrigin 不是数值：{mo.group(1)!r}") from e
         info.origin = (vals[0], vals[1], vals[2])
 
     if not srs or srs.lower() == "local":

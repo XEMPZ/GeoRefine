@@ -111,7 +111,14 @@ class DwgConverter:
                 doc.Close(False)
             except Exception:  # noqa: BLE001
                 pass
-            raise RuntimeError(f"AutoCAD SaveAs 失败: {e}") from e
+            hresult = getattr(e, "hresult", None)
+            if hresult == _RPC_E_CALL_REJECTED:
+                hint = "（CAD/CASS 正忙：请等它执行完命令、关掉模态对话框后重试）"
+            elif hresult is not None:
+                hint = f"（HRESULT 0x{hresult & 0xFFFFFFFF:08X}：常见于 CAD 里另有图纸在编辑状态）"
+            else:
+                hint = ""
+            raise RuntimeError(f"AutoCAD SaveAs 失败: {e}{hint}") from e
         try:
             _com_retry(lambda: doc.Close(False))
         except Exception:  # noqa: BLE001

@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self.nav.setFrameShape(QListWidget.NoFrame)
         self.nav.setCurrentRow(0)
         nv.addWidget(self.nav, 1)
-        ver = QLabel("v1.1")
+        ver = QLabel("v1.2")
         ver.setStyleSheet(f"color:{MUTED}; background:transparent; font-size:8pt;")
         nv.addWidget(ver)
         h.addWidget(nav_panel)

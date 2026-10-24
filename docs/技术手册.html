@@ -1,0 +1,128 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GeoRefine 技术手册</title><style>
+body{font-family:'Microsoft YaHei UI','Microsoft YaHei',sans-serif;background:#f4f1ea;color:#1e2a32;
+     margin:0;padding:36px 20px;line-height:1.85}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-size:26px;border-bottom:3px solid #2a6f8e;padding-bottom:10px;margin-top:0}
+h2{font-size:19px;color:#2a6f8e;border-left:4px solid #2a6f8e;padding-left:10px;margin-top:38px}
+h3{font-size:15px;color:#7a8b6f}
+table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #d8d2c4;margin:14px 0;font-size:13.5px}
+th{background:#faf8f3;color:#6b7a83;padding:9px 10px;border-bottom:1px solid #d8d2c4;text-align:left}
+td{padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top}
+tr:nth-child(even) td{background:#faf8f3}
+code{background:#e9efe8;border:1px solid #d8d2c4;border-radius:4px;padding:1px 6px;font-size:12.5px;
+     font-family:Consolas,monospace;color:#2a6f8e}
+pre{background:#1e2a32;color:#e8eef4;border-radius:8px;padding:14px 16px;overflow-x:auto}
+pre code{background:transparent;color:#a8f0dc;border:none}
+blockquote{border-left:4px solid #c96f4a;background:#fdf6f0;margin:12px 0;padding:8px 14px;color:#7a5b3f}
+.meta{color:#6b7a83;font-size:12.5px;margin-bottom:26px}
+ul li{margin:4px 0}
+strong{color:#1e2a32}
+</style></head><body><div class="wrap">
+<div class="meta">GeoRefine v1.2 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
+<h1>GeoRefine 技术手册</h1>
+<p>似大地水准面精化与坐标转换软件 · v1.1 · 作者 求道之心 · MIT License 项目主页：&lt;https://github.com/XEMPZ/GeoRefine&gt;</p>
+<p>本手册面向需要了解口径、算法与数据格式的用户。日常操作只需按界面提示进行； 每个控件悬停可见功能提示，计算结果页均有残差与精度指标。</p>
+<hr>
+<h2>1. 坐标与高程约定（全书统一）</h2>
+<table><thead><tr><th>概念</th><th>约定</th></tr></thead><tbody>
+<tr><td>平面坐标</td><td>x=北坐标、y=东坐标（含 500 km 假东偏移）；与主流国产测量软件一致</td></tr>
+<tr><td>大地坐标</td><td>B=纬度、L=经度；界面输入输出一律 B 前 L 后（控制点表格按手簿惯例 L 前 B 后，表头有标注）</td></tr>
+<tr><td>高程</td><td>H=大地高（椭球高）、h=正常高（水准高）；<strong>高程异常 ξ = H − h</strong>，正常高 = 大地高 − ξ</td></tr>
+<tr><td>角度编码</td><td>d.ms 编码：<code>105.302568</code> = 105°30′25.68″（国产手簿口径）；也接受十进制度与 <code>105 30 25.68</code> 空格分隔</td></tr>
+<tr><td>高斯投影</td><td>3°/6°/任意带；y 加常数默认 500 km；含带号坐标自动识别（13–23=6°带 L0=6n−3，24–45=3°带 L0=3n）</td></tr>
+</tbody></table>
+<h2>2. 功能与操作</h2>
+<h3>2.1 控制点转换（参数解算的核心）</h3>
+<p>1. 导入/键入公共点对：手簿点对 <code>.cot</code>、CASS 点对 <code>.txt</code>（旧x,y,h:新x,y,h）、7 列点对（点名,旧x,旧y,旧h,新x,新y,新h）、Excel/CSV/TXT 表格，自动识别。 2. 在&quot;比选与计算&quot;区勾选要参与的方法（全不勾=只要高程方案），点【计算与比选】：软件把平面方案与高程方案全部解算，按 RMS 排序。平面方案：四参数/三参数/二维七参数/七参数+投影+四参数/投影+三参数/直接投影基线；源为平面时另有投影反算+三/七参数逆链（可输出大地坐标）。高程方案：固定差/平面拟合/曲面拟合/大地水准面格网（格网可与拟合串联）。 3. 自动勾选：主按钮按最优结果自动勾选；手动微调任一勾选即时重算。 4. 残差逐点回填到表格右三列（Δx/Δy/Δh，单位 m）。 5. 【保存所选方法到参数库】生成 JSON 参数（params/ 目录），供&quot;参数应用转换&quot;&quot;照片 POS&quot;&quot;文件转换&quot;直接使用。 6. 逆向转换：源为工程平面坐标时，在&quot;源侧投影&quot;填中央子午线（或源 y 含带号自动识别），即可输出大地坐标。 7. 智能灰显：源/目标为大地坐标（或含带号平面）时，对应侧投影参数不参与计算并灰显。</p>
+<p><strong>方法口径对照</strong>（比选表显示中文名，括号为参数库代号）：直接投影（direct_gk，同基准基线）/ 平面四参数（planar4）/ 平面三参数（planar3）/ 二维七参数（seven2d）/ 空间七参数（seven）/ 七参数+投影+四参数（chain74）/ 投影+三参数（chain73）/ 四参数·经纬度直拟合（planar4deg）/ 投影反算+三参数（inv_chain3）/ 投影反算+七参数（inv_chain）/ 固定差（heightfit:const）/ 平面拟合（heightfit:plane）/ 曲面拟合（heightfit:quadratic）/ 大地水准面格网：模型名（格网:xxx）。</p>
+<h3>2.2 参数应用转换</h3>
+<p>选参数 → 粘贴/导入源坐标（自动识别平面或大地、自动 d.ms/度）→ 批量输出。&quot;转换平面坐标/转换高程&quot;可拆分勾选（未勾部分原值透传）；三维模型（空间七参数等）不可拆分。大地源参数在 d.ms 模式自动解码为十进制度后计算。</p>
+<h3>2.3 照片 POS 处理（免相控测量的关键）</h3>
+<p>1. 添加一个或多个照片目录 → 【扫描照片】统计 EXIF/XMP 中可识别的 POS。 2. 选择高程参数（格网模型或拟合参数）→ 【计算（预览）】逐张给出换算结果，不写盘。 3. 【开始处理】：把每张照片 XMP/EXIF 中的绝对高度（椭球高）替换为换算后的正常高。<code>_POS备份/</code> 目录首次保存原始照片（此后永不覆盖），台账逐张记录，可一键回滚。 4. 主流建图软件开启&quot;POS 高程/RTK 定向&quot;模式即可直接产出正常高成果。</p>
+<h3>2.4 OSGB 模型转换（倾斜摄影模型）</h3>
+<p>对倾斜摄影 OSGB 模型的<strong>每个顶点</strong>做坐标/高程转换，输出仍是标准 OSGB，可直接在原有引擎里加载。</p>
+<p>1. 选择模型目录（含 <code>metadata.xml</code>）与输出目录（<strong>不允许与输入相同</strong>，软件会拒绝）。 2. 选择参数，勾选要转换的内容：<strong>平面转换 / 高程转换可独立勾选</strong>，未勾选的部分原值逐位透传。 3. 界面会先做一次只读检查：统计瓦片数、解析 SRS 与原点、试算仿射系数并显示位移量； 位移异常大（&gt;50 km）会提示&quot;请确认参数与模型是否同一坐标系&quot;。 4. 开始转换后按瓦片批量处理，输出目录结构与输入一致。</p>
+<p><strong>参数来源不限</strong>：</p>
+<table><thead><tr><th>参数源</th><th>处理方式</th></tr></thead><tbody>
+<tr><td>平面源（planar4 / planar3 / seven2d / poly2d / poly3d）</td><td>顶点直接套用参数</td></tr>
+<tr><td>大地源（chain74 / direct_gk）</td><td>先按源侧投影把顶点反算为经纬度，再走参数链（经纬度 → 目标平面）</td></tr>
+</tbody></table>
+<p><strong>源侧投影</strong>：模型东坐标含带号时可自动识别（界面按钮「从模型自动识别」）， 也可手填中央子午线 L0 与假东 y0。含大地水准面格网的参数必须有 L0—— ξ 需要源侧经纬度插值，缺 L0 时软件<strong>明确拒绝</strong>而不是静默算错。</p>
+<p><strong>两条重要语义</strong>（用户最关心的两点）：</p>
+<ul><li><strong>SRSOrigin 保持不变</strong>。顶点承载世界坐标位移，局部坐标系不动，</li></ul>
+<p>与&quot;参数应用转换&quot;页的输出语义一致。</p>
+<ul><li><strong>轴序自动换算</strong>。OSGB 顶点是 <code>(东,北,高)</code>（ContextCapture 遵循 GIS/ENU 约定），</li></ul>
+<p>本软件测量约定是 <code>(北,东)</code>，两者相反；软件在读写处统一换轴（复用 <code>transform2d.to_survey_xy</code>）。</p>
+<h3>2.5 点云模型转换（LAS/LAZ）</h3>
+<p>对 LAS/LAZ 点云逐点转换 X/Y/Z。<strong>只动坐标</strong>——这是该功能的硬约束：</p>
+<table><thead><tr><th>类别</th><th>处理</th></tr></thead><tbody>
+<tr><td>坐标</td><td>X/Y/Z 按参数转换</td></tr>
+<tr><td>非坐标属性</td><td>强度、回波号/回波数、扫描方向、分类、合成/关键点/保留标志、扫描角、user_data、点源 ID、<strong>GPS 时间、RGB</strong>、以及文件里的<strong>自定义维度</strong></td></tr>
+<tr><td>头部元数据</td><td>点格式、版本、<strong>scale/offset</strong>、VLR（含 CRS WKT）、system_identifier、generating_software</td></tr>
+<tr><td>非坐标属性与头部元数据</td><td><strong>逐位原样搬运</strong>（测试逐维度断言&quot;逐位不变&quot;）</td></tr>
+</tbody></table>
+<p><strong>为什么不动 scale/offset</strong>：LAS 坐标 = <code>原始整数 × scale + offset</code>，<code>scale</code> 即量化步长 （常见 0.0001 m，隧道扫描仪常见 0.01 m）。改写它等于改变精度口径，不属于坐标转换， 因此一律沿用源文件的值；往返误差上界为半个量化步长。</p>
+<p><strong>轴序</strong>：LAS 头的 CRS 通常声明 <code>AXIS[&quot;Easting&quot;,EAST], AXIS[&quot;Northing&quot;,NORTH]</code>， 即 <strong>X=东、Y=北</strong>，与本软件 <code>(北,东)</code> 相反，软件自动换算。</p>
+<p><strong>源侧投影</strong>：可由 LAS 头的 CRS 自动读取中央子午线（直接解析 <code>lon_0</code>）， 或从 X 量级自动识别带号；都没有时手填 L0。平面与高程同样可独立勾选。</p>
+<p><strong>输入目录约定</strong>：只收集 <code>.las/.laz</code>，自动跳过空间索引与中间产物 （<code>*_dasindex.las</code>、<code>*_dasindex.xlas</code>）。<strong>单个文件失败不中断整批</strong>—— 扫描仪软件常驻时会锁住正在写的 LAS（<code>Permission denied</code>），此时该文件登记为失败、其余继续。</p>
+<h3>2.6 多项式转换（复杂坐标系）</h3>
+<p>二维多项式（平面→平面）/三维多项式（大地或平面→平面+高程）。算法与主流商用坐标转换内核的公开行为口径对齐（完全二次、重心化、改正数拟合，详见 §3.4）；本软件另提供 1/3 阶扩展。源/目标侧坐标系（椭球+投影）按需填写：普通平面一侧填投影（先反算成大地再拟合），大地/含带号一侧自动识别并灰显。高程处理：曲面拟合与大地水准面格网可任意叠加（先 ξ 换算再拟合剩余趋势）；三维多项式的第三分量也可作为高程来源（默认锁定，config.json 写 {&quot;enable_poly3d&quot;: true} 解锁）。</p>
+<p><strong>适用性</strong>：重合点分布均匀、数量足够且目标系精度更高时效果好；点少且分布不均时精度降低，尤其不适用于外推——除非知道在做什么，否则一般不用这个（界面与参数内均强制携带此说明）。</p>
+<h3>2.7 文件转换</h3>
+<p>DXF/DWG/SHP/文本点文件/PGDB(MDB) 整目录批量转换平面坐标与高程。DWG 经本机 AutoCAD COM 转换（无 AutoCAD 的机器该格式降级提示）；PGDB 直读 ESRI 要素类 blob；输出坐标系/高程由所选参数决定。</p>
+<h3>2.8 精度对比</h3>
+<p>同一批点对喂给参数 A 与参数 B（如不同大地水准面模型、有无趋势项），逐点比较坐标/高程残差，输出 RMS/均值/最大值与柱状图，给出&quot;建议用哪个&quot;的结论。支持纯格网参数、格网+趋势参数的评估；点对支持手簿 cot（含逐点参与标志）。</p>
+<h3>2.9 高斯投影换带 / 空间坐标转换</h3>
+<p>单点计算器：换带支持 UTM 尺度（k=0.9996）、任意带中央子午线、抵偿投影面大地高 h0 与严密（a&#x27;=a·(1+h0/Ra(B0))）/近似（a&#x27;=a+h0）工程椭球，支持行业通用口径；空间转换支持 XYZ/BLH/xyH 六型互转。</p>
+<h3>2.10 参数库 / 处理台账</h3>
+<p>参数库三分区管理（椭球参数、坐标转换参数、大地水准面文件），支持导入导出 JSON；自定义椭球保存后全软件可选。台账记录每次计算/回写/转换（logs/operation_log.jsonl），可导出 CSV、可清空。</p>
+<h2>3. 算法依据与精度验证</h2>
+<h3>3.1 高斯投影</h3>
+<p>6 阶勒让德级数正算 + 级数反算初值 + 牛顿迭代数值反演（正算绝对精度与 PROJ 对照验证；换带往返闭合 &lt;1e-9°）。与 144 组已知参考坐标逐位对照（最大偏差 ≤0.5 µm），覆盖 UTM 尺度、加常数、抵偿投影面与严密/近似工程椭球分支。</p>
+<h3>3.2 基准转换</h3>
+<p>四参数/三参数/二维七参数（布尔莎平面退化，重心化解算）/空间七参数（布尔莎，经典线性解+高斯-牛顿精化双路径）。工程椭球语义：严密=Ra(B0) 平均曲率半径法、近似=a+h0 膨胀法（行业惯例），B0 自动取参与点平均纬度。</p>
+<h3>3.3 高程处理</h3>
+<ul><li><strong>高程拟合</strong>：固定差/平面（斜面）/二次曲面，重心化最小二乘；自动留一验证（LOO）评估外推可靠性，LOO-RMS 随参数保存。</li><li><strong>大地水准面格网</strong>：支持 gtx / tif / <strong>ggf（天宝）</strong> / zgf（中海达）/ grd（Surfer）/ csv / bin，</li></ul>
+<p>统一经 <code>geoid.load_grid()</code> 分发为 <code>GridData</code> 后双线性内插 ξ（经度,纬度）；出界明确报错不静默外推； 可与拟合串联（ξ=格网+残差趋势项）。<strong>RMS 转换、OSGB 模型转换、点云转换三条链路对格式完全无感</strong>—— 实测同一坐标用 GGF 与 CSV 格网结果差异 6.1e-09 m。</p>
+<ul><li><strong>默认启用规则</strong>：椭球为地心坐标系（CGCS2000/WGS84）且存在可用格网时自动勾选；参心坐标系（北京54/西安80）不适用位势格网，默认不勾。格网是否覆盖测区在计算时校验。</li></ul>
+<h3>3.4 多项式转换（完全二次模型）</h3>
+<p>采用完全二次模型：二维=6 项 [1,x,y,x²,y²,xy]、三维=10 项 [1,x,y,z,x²,y²,z²,xy,xz,yz]，双侧重心化，观测值为改正数（新−旧），正规方程+矩阵求逆，最少点数=项数。本实现拟合绝对坐标（数学等价）、lstsq 求解（较裸求逆稳健），按该口径的参考实现对拍：转换结果良态 5e-12 一致、工程大坐标差异 &lt;0.1 mm（法方程求解噪声）。</p>
+<h3>3.5 大模型数据转换（OSGB 与 LAS）</h3>
+<p>两个转换器共用同一套坐标换算链路（<code>apply_points</code> / <code>ParamApplier</code>）， 差别只在&quot;如何处理文件里的顶点/点&quot;：</p>
+<table><thead><tr><th></th><th>OSGB 倾斜摄影模型</th><th>LAS/LAZ 点云</th></tr></thead><tbody>
+<tr><td>顶点来源</td><td><code>osg::Vec3Array</code>（顶点 = 实际坐标 − SRSOrigin）</td><td>点记录的 X/Y/Z（绝对投影坐标）</td></tr>
+<tr><td>处理方式</td><td><strong>内存态遍历</strong>：用 OSG 的 C++ API 读出场景图、逐节点改 <code>Vec3Array</code>、再写回</td><td><strong>整块矩阵化</strong>：把参数线性化成仿射矩阵，整块 numpy 运算</td></tr>
+<tr><td>中间层</td><td>无（不经过文本序列化）</td><td>无</td></tr>
+<tr><td>实测性能</td><td>1537 瓦片 / 2098 万顶点 / 16 线程 <strong>约 23 秒</strong></td><td><strong>每秒上千万点</strong>（4913 万点单文件约 7 秒，含读写）</td></tr>
+<tr><td>原点处理</td><td>参数作用在绝对坐标上，故<strong>先加回 SRSOrigin、变换后再减回</strong>；SRSOrigin 本身不变</td><td>坐标即绝对，无需原点补偿</td></tr>
+</tbody></table>
+<p><strong>为什么参数作用在绝对坐标上</strong>：控制点在现实中永远是绝对投影坐标，因此拟合出的参数 必然工作在绝对空间。用一个&quot;有已知答案&quot;的构造实验可验证：对绝对坐标应用参数与真值逐位一致， 而对局部偏移应用会得到完全错误的结果。</p>
+<p><strong>线性化与自检</strong>：仿射系数在 OSGB 的<strong>瓦片坐标邻域</strong>、LAS 的<strong>每个数据块中心</strong>上提取， 并用二阶差分校验线性性；再在一个瓦片尺度的范围上抽样核对仿射近似残差，超过 0.1 mm 即拒绝 （大地水准面格网会让高程成为空间缓变函数，此自检用来兜住极端情形）。</p>
+<p><strong>性能为什么必须这么做</strong>：逐点调用引擎约 8.6 万点/秒，4913 万点的单个 LAS 要 9.5 分钟； 整块矩阵化后为 2.1×10⁷ 点/秒，快约 240 倍。OSGB 若走文本中间层（<code>.osgt</code>）会慢 3～4 倍， 故用 C++ 直接在内存里操作场景图。</p>
+<h3>3.6 数据格式</h3>
+<ul><li><strong>.cot</strong>（手簿点对）：<code>点名,x北,y东,h正常,B(d.ms),L(d.ms),H大地,辅1,辅2,用平面Y/N,用高程Y/N</code> ——B/L 亦为 d.ms 编码；列结构为 [施工平面三点]+[WGS84 三点] 两组。</li><li><strong>CASS 公共点</strong>：<code>旧x,旧y,旧h:新x,新y,新h</code>（无点名）。</li><li><strong>7 列点对（南方坐标转换软件导出格式）</strong>：<code>点名,旧x,旧y,旧h,新x,新y,新h</code>（逗号/空白分隔，点名可省略）。</li><li><strong>表格</strong>：CSV/TXT/XLSX，表头别名自动识别（点名/x/y/h/x2/y2/H/B/L/大地高/目标x…），编码 utf-8-sig→gb18030 回退。</li><li><strong>XMP/EXIF</strong>：大疆 drone-dji:AbsoluteAltitude 等绝对高度字段等字节替换，其余字段不动。</li><li><strong>OSGB</strong>（倾斜摄影）：<code>metadata.xml</code> 记录 <code>SRS</code> 与 <code>SRSOrigin</code>；顶点以&quot;实际坐标 − SRSOrigin&quot;存储，</li></ul>
+<p>轴序为 <code>(东,北,高)</code>。读写用 OSG 官方库（osgconv / OSG C++ API），不自研格式解析。</p>
+<ul><li><strong>LAS/LAZ</strong>（点云）：读写用公开库 <strong>laspy</strong>，支持点格式 0~10。轴序 <code>X=东、Y=北</code>；</li></ul>
+<p>坐标 = <code>整数 × scale + offset</code>，软件<strong>不改动 scale/offset</strong>（它们决定量化步长，不属于坐标转换）。</p>
+<h3>3.7 参数库 schema（coordparam/1）</h3>
+<p>JSON，见 ARCHITECTURE.md §3。关键项：kind（方法代号）、source_kind/target_kind、projection（目标侧投影）、projection_src（源侧投影，含带号 zone）、planar4/planar3/seven/three、poly（多项式模型本体）、heightfit、geoid_grid、height_flags、accuracy（RMS/LOO/点数）。</p>
+<h2>4. 已知限制</h2>
+<ul><li>DWG 依赖本机 AutoCAD（COM）；无 AutoCAD 时该格式不可用（其余格式不受影响）。</li><li><strong>OSGB 模型转换</strong>：免安装版内置 Windows 原生转换器（全静态，无需 WSL/OSG）。</li></ul>
+<p>源码在 <code>app/osgb/cpp/osgb_vertex_transform.cpp</code>； Windows 原生构建脚本 <code>app/osgb/cpp/build_windows_native.sh</code>（过程见 <code>docs/BUILD_WINDOWS_OSG.md</code>）； Linux/WSL 构建脚本 <code>app/osgb/cpp/build.sh</code>。界面按 <code>native/</code> → <code>app/osgb/cpp/native/</code> → WSL <code>/tmp/</code> 查找。</p>
+<ul><li><strong>点云转换目前只支持 LAS/LAZ</strong>（用 laspy）。E57 / PCD / PTX 尚未实现。</li><li>LAS 转换<strong>不改动 scale/offset</strong>：若转换后坐标超出原 scale/offset 能表示的范围，</li></ul>
+<p>精度会退化为原量化步长；极端位移下（超过 ±2.1×10⁹ 个整数单位）须先调整 offset。</p>
+<ul><li>单点转换（参数应用/文件转换）不受影响；OSGB 与点云的坐标换算与它们<strong>同源同口径</strong>，</li></ul>
+<p>不存在&quot;两套算法&quot;。</p>
+<ul><li>MapGIS 加密格式（wt/wl/wp）解析器在厂商加壳核内，未实现（待样例）。</li><li>大地水准面格网支持 <strong>gtx / tif / csv / zgf / ggf / grd / bin</strong>（自动识别后缀）；</li></ul>
+<p>tif 需 <code>imagecodecs</code>（EGM 系列用浮点预测器，缺它 tifffile 无法解码）。</p>
+<ul><li>多项式外推无保障（模型两端之外的精度急剧下降，软件已在页面与参数中强制注明）。</li><li>EGM96/EGM2008 数据再分发条款请自行确认；tools/download_geoid_models.py 提供下载脚本。</li></ul>
+<h2>5. 常见问题</h2>
+<ul><li><strong>y 坐标很长（8 位）？</strong> 含带号坐标，软件自动识别分带并锁定中央子午线；不需要手工剥带号。</li><li><strong>残差突然几千米？</strong> 多半是源/目标类型选错（经纬度当平面）或椭球/投影不匹配；比选表&quot;不可行&quot;行与说明栏会注明原因。</li><li><strong>想只用大地水准面不做拟合？</strong> 控制点页全不勾平面方案+只勾&quot;大地水准面模型&quot;，保存后即纯格网参数。</li><li><strong>参数给别人用？</strong> params/*.json 直接拷贝；含格网参数需连同 models/ 中对应 gtx 一起拷。</li><li><strong>OSGB/LAS 转换出来的坐标对吗？</strong> 换算与&quot;参数应用转换&quot;页<strong>同一个入口</strong>（<code>apply_points</code>），</li></ul>
+<p>可用同一批点对两处各算一次对照。软件内部的端到端测试也逐点核对过。</p>
+<ul><li><strong>点云转换会改变颜色/强度吗？</strong> 不会。只写 X/Y/Z，其余维度逐位搬运（有专门的测试逐维度断言）。</li></ul>
+<p>注意&quot;有 RGB 字段&quot;不等于&quot;有颜色&quot;：不少扫描仪导出时把 RGB 填成全白 <code>65535</code> 或全黑 <code>0</code> 占位。</p>
+<ul><li><strong>OSGB 的 SRSOrigin 会变吗？</strong> 不会。位移落在顶点上，局部坐标系不动。</li><li><strong>LAS 没有坐标系信息怎么办？</strong> 在&quot;源侧投影参数&quot;里勾选启用并填中央子午线 L0；</li></ul>
+<p>东坐标含带号时软件可自动识别并锁定 L0。</p>
+</div></body></html>

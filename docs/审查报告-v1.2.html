@@ -1,0 +1,85 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GeoRefine v1.2 代码审查报告</title><style>
+body{font-family:'Microsoft YaHei UI','Microsoft YaHei',sans-serif;background:#f4f1ea;color:#1e2a32;
+     margin:0;padding:36px 20px;line-height:1.85}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-size:26px;border-bottom:3px solid #2a6f8e;padding-bottom:10px;margin-top:0}
+h2{font-size:19px;color:#2a6f8e;border-left:4px solid #2a6f8e;padding-left:10px;margin-top:38px}
+h3{font-size:15px;color:#7a8b6f}
+table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #d8d2c4;margin:14px 0;font-size:13.5px}
+th{background:#faf8f3;color:#6b7a83;padding:9px 10px;border-bottom:1px solid #d8d2c4;text-align:left}
+td{padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top}
+tr:nth-child(even) td{background:#faf8f3}
+code{background:#e9efe8;border:1px solid #d8d2c4;border-radius:4px;padding:1px 6px;font-size:12.5px;
+     font-family:Consolas,monospace;color:#2a6f8e}
+pre{background:#1e2a32;color:#e8eef4;border-radius:8px;padding:14px 16px;overflow-x:auto}
+pre code{background:transparent;color:#a8f0dc;border:none}
+blockquote{border-left:4px solid #c96f4a;background:#fdf6f0;margin:12px 0;padding:8px 14px;color:#7a5b3f}
+.meta{color:#6b7a83;font-size:12.5px;margin-bottom:26px}
+ul li{margin:4px 0}
+strong{color:#1e2a32}
+</style></head><body><div class="wrap">
+<div class="meta">GeoRefine v1.2 · 由 tools/build_docs_html.py 生成 · 纸色地图学风格 · 自包含单文件</div>
+<h1>GeoRefine v1.2 代码审查报告</h1>
+<p>审查范围：<code>app/</code> 全部 59 个模块（约 800 KB Python），外加一轮数值对勘（pyproj / Karney 精确积分）与 GUI 级回归（offscreen）。 方法：静态扫描（AST：裸 except / except-pass / 可变默认值 / assert）+ 逐模块读码 + 构造输入实测复现。 结论：<strong>修 18 处</strong>（其中 9 处会算出错数据、4 处会崩或丢结果），<strong>另有 10 处已定位但未改</strong>，列在第 3 节。</p>
+<hr>
+<h2>1. 已修（按影响排序）</h2>
+<h3>A. 会算错数据</h3>
+<table><thead><tr><th>#</th><th>位置</th><th>现象</th><th>根因</th><th>验证</th></tr></thead><tbody>
+<tr><td>A1</td><td><code>logic/apply_params.py:41</code></td><td>七/三参数 BLH→BLH 输出 <code>B=1718.52°</code></td><td><code>ecef_to_geodetic()</code> 返回<strong>度</strong>，却喂给要弧度的 <code>rad_to_dms</code>（第 26 行那支是对的，两支口径不一致）</td><td>恒等七参数：1718.52 → <code>30.00000000</code></td></tr>
+<tr><td>A2</td><td><code>common/params.py:504</code></td><td>平面→平面 + 高程拟合，平移 100 km 时高程差 100 m</td><td>拟合用<strong>源</strong>坐标，求值却用<strong>平移后</strong>目标坐标（<code>hconv.py</code> 用的是源坐标，两处矛盾）</td><td>算例 110.0 → 10.0</td></tr>
+<tr><td>A3</td><td><code>logic/cp_methods.py:383</code></td><td>北京54 算的参数，应用时按 CGCS2000 投影，y 偏约 100 m，无提示</td><td><code>build_param_doc</code> 把 <code>&quot;ellipsoid&quot;</code> 写死 <code>CGCS2000</code>，忽略页面所选椭球</td><td>传 Beijing54 后 JSON 正确</td></tr>
+<tr><td>A4</td><td><code>core/anglefmt.py:51</code></td><td>「自动」角度模式下 30°59′ 被当 30.59°，纬度错 43.7 km</td><td><code>dms_plausible</code> 用 <code>int(frac*100)</code> 无 ε（<code>dms_to_rad</code> 有），300 个合法 d.ms 里 29 个被判非法</td><td>加 ε 后 0 误拒</td></tr>
+<tr><td>A5</td><td><code>core/gk_engine.py:54</code></td><td>子午线弧长 e¹⁰ 项放大 10 倍（B=45° 偏 30.5 µm）</td><td>分母写成 <code>13072</code>，应为 <code>131072</code></td><td>对勘精确积分：+30.5 µm → +0.04 µm</td></tr>
+<tr><td>A6</td><td><code>core/projection.py:20</code></td><td>子午线弧长 e⁸ 项偏 +288 µm</td><td>分母写成 <code>32768</code>，应为 <code>4096</code></td><td>+288 µm → +0.04 µm（B=30°）</td></tr>
+<tr><td>A7</td><td><code>cad/dxf_transform.py</code></td><td>只转高程（不转平面）时，CIRCLE/ARC/INSERT 的 Z 完全不变</td><td>主循环 <code>dxftype not in (&quot;INSERT&quot;,&quot;CIRCLE&quot;,&quot;ARC&quot;)</code> 把高程跳过，而 <code>_apply_height</code> 里其实有 CIRCLE/ARC 分支</td><td>四类实体实测均 +10；平面+高程仍只作用一次</td></tr>
+<tr><td>A8</td><td><code>osgb/flash.py:205</code></td><td>子进程失败也弹「转换完成（成功 0/失败 0）」，还写出只有 metadata 的假模型</td><td>从不看 <code>returncode</code>，只认 stdout 里的 SUMMARY</td><td>缺 SUMMARY 现在抛错</td></tr>
+<tr><td>A9</td><td><code>osgb/srs.py:73</code></td><td><code>SRSOrigin</code> 用空格分隔时静默变成 (0,0,0)，含旋转的四参数把模型平移约 29 m</td><td>只按逗号 split，解析失败 <code>append(0.0)</code> 且无提示</td><td>兼容空格；非法值直接 <code>ValueError</code></td></tr>
+</tbody></table>
+<h3>B. 会崩 / 丢结果</h3>
+<table><thead><tr><th>#</th><th>位置</th><th>现象</th><th>根因</th></tr></thead><tbody>
+<tr><td>B1</td><td><code>gui/pages.py:1768</code></td><td>照片批处理跑完弹 KeyError：照片已写盘，但完成提示与台账都没写</td><td>读 <code>res[&quot;root&quot;]</code>，而 worker 汇总的是 <code>res[&quot;roots&quot;]</code></td></tr>
+<tr><td>B2</td><td><code>gui/pages.py:1683</code></td><td>勾「同时转换平面坐标」必 AttributeError（选七参数时该框会被自动勾上）</td><td><code>self.plane_param_combo</code> 全项目不存在（UI 有说明文字却没这个控件）</td></tr>
+<tr><td>B3</td><td><code>gui/pages.py:1046</code></td><td>控制点导入时目标列被源经纬度覆盖，CSV 里的目标坐标被丢掉 → 拟合出错误参数且无提示</td><td><code>if not has_bl:</code> 把 <code>x2/y2</code> 回填整段挡住</td></tr>
+<tr><td>B4</td><td><code>gui/pages.py:4533</code></td><td>换带页第 4 列填「高程待定」→ <code>float()</code> 抛在 try 外，整批中断、结果残缺却能保存</td><td>转换在 try 内，<code>h_out</code> 格式化在 try 外</td></tr>
+</tbody></table>
+<h3>C. 其它</h3>
+<table><thead><tr><th>#</th><th>位置</th><th>修复</th></tr></thead><tbody>
+<tr><td>C1</td><td><code>gui/pages.py:3381</code></td><td>多边形页 <code>b0</code> 取 <code>p[1]</code>（经度）→ 改 <code>p[0]</code>（纬度）</td></tr>
+<tr><td>C2</td><td><code>gui/pages.py:2198</code></td><td>OSGB 页每次刷新都重连 <code>currentIndexChanged</code> → 加 disconnect 守卫</td></tr>
+<tr><td>C3</td><td><code>gui/pages.py:1481</code></td><td>纯高程参数 <code>n_points</code> 恒 0（键名 <code>n_h</code> vs <code>n</code>）</td></tr>
+<tr><td>C4</td><td><code>common/pair_io.py:116</code></td><td>空 CASS 文件分支引用未定义变量 <code>p</code> → NameError</td></tr>
+<tr><td>C5</td><td><code>fileconv/dwg_convert.py</code></td><td>COM 失败信息只有 &quot;Open.SaveAs&quot;，补 HRESULT 与&quot;CAD 忙/另有图纸在编辑&quot;的提示</td></tr>
+<tr><td>C6</td><td><code>main.py</code></td><td><strong>新增</strong>全局异常钩子：写 <code>logs/crash_*.log</code> + 弹窗（打包版无控制台，以前异常只往不存在的 stderr 打印，表现为&quot;点了没反应&quot;）</td></tr>
+<tr><td>C7</td><td><code>gui/pages.py</code>（全表）</td><td><strong>新增</strong> <code>_CopyTable</code>：所有 14 个表格支持 Ctrl+C 复制选区/整表（TSV）</td></tr>
+<tr><td>C8</td><td><code>gui/pages.py:1822</code>、<code>osgb/osgb_batch.py:12</code></td><td>文档字符串里的 ``` 改为正常反引号（SyntaxWarning）</td></tr>
+</tbody></table>
+<hr>
+<h2>2. 数值验证（改后）</h2>
+<p>对勘对象：pyproj 3.8（UTM / Karney 测地线）与 200 点 Gauss–Legendre 精确积分。</p>
+<table><thead><tr><th>项目</th><th>改前</th><th>改后</th></tr></thead><tbody>
+<tr><td>子午线弧长 <code>projection</code>（B=15/30/45/60°）</td><td>+144 / +249 / +288 / +252 µm</td><td>0.00 / 0.04 / 0.74 / 3.30 µm</td></tr>
+<tr><td>子午线弧长 <code>gk_engine</code>（B=45°）</td><td>+30.5 µm</td><td>+0.04 µm（其余纬度残留约 31 µm 的 sin8 项，见 3.8）</td></tr>
+<tr><td>gk_engine 正反算闭合（600 点）</td><td>1.4e-9 m</td><td>1.4e-9 m（未变）</td></tr>
+<tr><td>与 pyproj UTM 差（Δλ≤3.4°，lat 18–50°）</td><td>≤ 3 mm</td><td>≤ 3 mm（换带带内精度由级数决定，非本次改动目标）</td></tr>
+<tr><td>d.ms → 度往返（4000 个随机角）</td><td>1.8e-8″</td><td>1.8e-8″</td></tr>
+<tr><td>七参数恒等变换</td><td>B 偏 +1688°</td><td>与输入一致（&lt;1e-6″）</td></tr>
+</tbody></table>
+<hr>
+<h2>3. 已定位、未修改（10 项）</h2>
+<p>见《交接文档.md》第 4 节的表（位置、问题、建议改法一一对应）。简述：</p>
+<p>1. OSGB 页「大地源参数」功能不可达（提示与 <code>do_run</code> 自相矛盾，引擎其实支持）。 2. LAS 输出丢 EVLR（LAS 1.4 的 CRS WKT）。 3. LAS 失败/取消不删半成品文件。 4. <code>_wsl_rewrite.py</code> 的 <code>b/origin</code> 口径与 C++ 不一致（该函数当前无 GUI 调用点）。 5. <code>geoid.read_grd</code> 的 f32/f64 判别不可达（需造 f64 样例复现）。 6. <code>pair_io</code> 纯数字点名导出再导入会错位一列。 7. <code>detect_coord_kind</code> 以 |v|≤360 判经纬度，局部小坐标会误判。 8. <code>gk_engine</code> 级数缺 sin8φ 项，留 31 µm（0.03 mm）残差。 9. <code>flash.py</code> 的 mkdtemp 目录不清理。 10. <code>autoselect.build_param_dict</code> 依赖从不写入的 <code>row[&quot;_fit4&quot;]</code>（仅测试路径）。</p>
+<hr>
+<h2>4. 测试覆盖（v1.2 新增）</h2>
+<table><thead><tr><th>文件</th><th>断言数</th><th>覆盖</th></tr></thead><tbody>
+<tr><td><code>test_table_copy.py</code></td><td>6</td><td>所有表格都是 <code>_CopyTable</code>；选区/整表/Ctrl+C 按键三条路径</td></tr>
+<tr><td><code>test_crash_hook.py</code></td><td>2</td><td>未捕获异常写日志 + 弹窗</td></tr>
+<tr><td><code>test_anglefmt.py</code></td><td>7</td><td>d.ms 编解码、59′59″ 进位、解析、结构判别</td></tr>
+<tr><td><code>test_space_page.py</code></td><td>6</td><td>BLH→xyH 空高程、XYZ 缺 Z、XYZ→BLH 数值</td></tr>
+<tr><td><code>test_dxf_elevation.py</code></td><td>3</td><td>仅高程模式下四类实体、平面+高程各作用一次</td></tr>
+<tr><td><code>test_pages_regressions.py</code></td><td>8</td><td>控制点导入目标列、照片完成回调、换带页高程列、SRSOrigin 解析</td></tr>
+<tr><td><code>test_core_fixes.py</code></td><td>5</td><td>七参数输出、拟合自变量、d.ms 判别、弧长系数、参数椭球</td></tr>
+</tbody></table>
+<p>合计 25 个测试文件、全部通过（DWG 那条在 AutoCAD 忙时跳过）。</p>
+</div></body></html>
